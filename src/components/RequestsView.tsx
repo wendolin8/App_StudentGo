@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Camera, Car, Check, Clock3, Compass, MapPin, Plus, QrCode, ShieldCheck, UsersRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRides } from '@/lib/useRides';
@@ -12,8 +12,9 @@ const TRIP_LABEL: Record<RideTripStatus, string> = { PUBLISHED: 'Publicado', FUL
 type RpcResult = { ok: boolean; reason: string };
 
 export default function RequestsView({ userId, isDriver, canPublish, onPublish, onOpenSafety }: { userId: string; isDriver: boolean; canPublish: boolean; onPublish: () => void; onOpenSafety: () => void }) {
-  const { rides, groups, loading, failed, reload } = useRides(userId, isDriver);
-  const [tab, setTab] = useState<'passenger' | 'driver'>('passenger');
+  const { rides, groups, loading, failed, errorMessage, reload } = useRides(userId, isDriver);
+  const [tab, setTab] = useState<'passenger' | 'driver'>(isDriver ? 'driver' : 'passenger');
+  useEffect(() => { setTab(isDriver ? 'driver' : 'passenger'); }, [isDriver]);
   const activeRides = rides.filter((ride) => !isFinishedTrip(ride.trip.status));
   const activeGroups = groups.filter((group) => !isFinishedTrip(group.trip.status));
 
@@ -23,7 +24,7 @@ export default function RequestsView({ userId, isDriver, canPublish, onPublish, 
       <button className={tab === 'passenger' ? 'selected' : ''} onClick={() => setTab('passenger')}>Como pasajero <span>{activeRides.length}</span></button>
       <button className={tab === 'driver' ? 'selected' : ''} onClick={() => setTab('driver')}>Como conductor <span>{activeGroups.length}</span></button>
     </div>}
-    {failed && <div className="sos-status">No pudimos cargar tus solicitudes. <button className="small-button" onClick={() => { void reload(); }}>Reintentar</button></div>}
+    {failed && <div className="sos-status">{errorMessage || 'No pudimos cargar tus solicitudes.'} <button className="small-button" onClick={() => { void reload(); }}>Reintentar</button></div>}
     {!failed && loading && <p className="scanner-status">Cargando solicitudes...</p>}
     {!failed && !loading && tab === 'passenger' && <PassengerRequests rides={activeRides} userId={userId} onOpenSafety={onOpenSafety} />}
     {!failed && !loading && tab === 'driver' && isDriver && <>

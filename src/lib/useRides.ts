@@ -6,15 +6,19 @@ export function useRides(userId: string, isDriver: boolean) {
   const [groups, setGroups] = useState<DriverTripGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const reload = useCallback(async () => {
+    setLoading(true);
     const [passenger, driver] = await Promise.all([
       fetchPassengerRides(userId),
-      isDriver ? fetchDriverTrips(userId) : Promise.resolve<DriverTripGroup[]>([]),
+      isDriver ? fetchDriverTrips(userId) : Promise.resolve({ data: [] as DriverTripGroup[], error: null }),
     ]);
-    setFailed(!passenger || !driver);
-    setRides(passenger ?? []);
-    setGroups(driver ?? []);
+    const message = passenger.error ?? driver.error;
+    setFailed(Boolean(message));
+    setErrorMessage(message ?? '');
+    setRides(passenger.data);
+    setGroups(driver.data);
     setLoading(false);
   }, [userId, isDriver]);
 
@@ -24,5 +28,5 @@ export function useRides(userId: string, isDriver: boolean) {
     return () => window.clearInterval(timer);
   }, [reload]);
 
-  return { rides, groups, loading, failed, reload };
+  return { rides, groups, loading, failed, errorMessage, reload };
 }

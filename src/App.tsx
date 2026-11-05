@@ -221,6 +221,16 @@ function App() {
 
   const initials = profile.full_name.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase() || 'AB';
   const visibleNavItems = navItems.filter((item) => item.id !== 'admin');
+  const isApprovedDriver = profile.role === 'DRIVER' && driverApplicationStatus?.status === 'APPROVED' && approvedVehicles.length > 0;
+  const openDriverAction = () => {
+    if (isApprovedDriver) setShowPublishFlow(true);
+    else setShowDriverFlow(true);
+  };
+  const driverPrompt = isApprovedDriver
+    ? { title: 'Ofrecer viaje', detail: 'Publica tu siguiente recorrido.' }
+    : driverApplicationStatus?.status === 'PENDING_REVIEW'
+      ? { title: 'Solicitud en revisión', detail: 'Consulta el estado de tu registro.' }
+      : { title: '¿Tienes auto?', detail: 'Conviértete en conductor' };
 
   return (
     <div className="app-shell">
@@ -235,9 +245,9 @@ function App() {
           {visibleNavItems.map((item) => <NavButton key={item.id} item={item} active={activeTab === item.id} onClick={setActiveTab} badge={item.id === 'alerts' ? unreadCount : 0} />)}
         </nav>
         <div className="sidebar-bottom">
-          <button className="driver-prompt" onClick={() => setShowDriverFlow(true)}>
+          <button className="driver-prompt" onClick={openDriverAction}>
             <div className="driver-prompt-icon"><Car size={20} /></div>
-            <div><strong>¿Tienes auto?</strong><span>Conviértete en conductor</span></div>
+            <div><strong>{driverPrompt.title}</strong><span>{driverPrompt.detail}</span></div>
             <ChevronRight size={17} />
           </button>
           <button className="support-link"><MessageCircle size={17} /> Ayuda y soporte</button>
@@ -254,12 +264,12 @@ function App() {
           </div>
         </header>
 
-        {activeTab === 'home' && <HomeView searchFrom={searchFrom} searchTo={searchTo} setSearchFrom={setSearchFrom} setSearchTo={setSearchTo} trips={visibleTrips} statuses={requestStatuses} onSelectTrip={setSelectedTrip} onDriver={() => setShowDriverFlow(true)} onHistory={() => setActiveTab('history')} />}
-        {activeTab === 'requests' && <RequestsView userId={user.id} isDriver={profile.role === 'DRIVER'} canPublish={approvedVehicles.length > 0} onPublish={() => setShowPublishFlow(true)} onOpenSafety={() => setActiveTab('safety')} />}
+        {activeTab === 'home' && <HomeView searchFrom={searchFrom} searchTo={searchTo} setSearchFrom={setSearchFrom} setSearchTo={setSearchTo} trips={visibleTrips} statuses={requestStatuses} onSelectTrip={setSelectedTrip} onDriver={openDriverAction} onHistory={() => setActiveTab('history')} />}
+        {activeTab === 'requests' && <RequestsView userId={user.id} isDriver={profile.role === 'DRIVER'} canPublish={isApprovedDriver} onPublish={() => setShowPublishFlow(true)} onOpenSafety={() => setActiveTab('safety')} />}
         {activeTab === 'history' && <HistoryView userId={user.id} isDriver={profile.role === 'DRIVER'} />}
         {activeTab === 'safety' && <SafetyView user={user} />}
         {activeTab === 'alerts' && <NotificationsView user={user} onChanged={() => { void loadUnread(user.id); }} onOpen={(target) => setActiveTab(target === 'trips' ? 'requests' : 'safety')} />}
-        {activeTab === 'profile' && <ProfileView profile={profile} initials={initials} onDriver={() => setShowDriverFlow(true)} onSignOut={signOut} />}
+        {activeTab === 'profile' && <ProfileView profile={profile} initials={initials} isApprovedDriver={isApprovedDriver} driverStatus={driverApplicationStatus?.status ?? null} onDriver={openDriverAction} onSignOut={signOut} />}
         {activeTab === 'admin' && profile?.role === 'ADMIN' && <AdminView />}
 
         <div className="mobile-nav">
@@ -267,7 +277,7 @@ function App() {
         </div>
       </main>
 
-      {showMenu && <MobileDrawer active={activeTab} isAdmin={profile?.role === 'ADMIN'} onClose={() => setShowMenu(false)} onSelect={(tab) => { setActiveTab(tab); setShowMenu(false); }} onDriver={() => { setShowDriverFlow(true); setShowMenu(false); }} />}
+      {showMenu && <MobileDrawer active={activeTab} isAdmin={profile?.role === 'ADMIN'} onClose={() => setShowMenu(false)} onSelect={(tab) => { setActiveTab(tab); setShowMenu(false); }} onDriver={() => { openDriverAction(); setShowMenu(false); }} />}
       {selectedTrip && <TripModal trip={selectedTrip} status={requestStatuses[selectedTrip.id]} user={user} onClose={() => setSelectedTrip(null)} onRequest={() => { void requestTrip(selectedTrip.id); }} />}
       {showDriverFlow && <DriverModal onClose={() => setShowDriverFlow(false)} onSubmit={(draft) => { void registerDriver(draft); }} status={driverApplicationStatus} />}
       {showPublishFlow && <PublishTripModal vehicles={approvedVehicles} onClose={() => setShowPublishFlow(false)} onPublish={(draft, vehicleId, route) => { void publishTrip(draft, vehicleId, route); }} />}
@@ -317,10 +327,10 @@ function TripCard({ trip, status, onSelect }: { trip: Trip; status?: TripStatus;
 }
 
 
-function ProfileView({ profile, initials, onDriver, onSignOut }: { profile: Profile | null; initials: string; onDriver: () => void; onSignOut: () => void }) {
+function ProfileView({ profile, initials, isApprovedDriver, driverStatus, onDriver, onSignOut }: { profile: Profile | null; initials: string; isApprovedDriver: boolean; driverStatus: DriverApplicationStatus['status'] | null; onDriver: () => void; onSignOut: () => void }) {
   return <div className="page-wrap profile-page">
     <div className="profile-hero card-surface"><div className="profile-avatar">{initials}</div><h1>{profile?.full_name ?? 'Estudiante'}</h1><p>{profile?.career ?? 'Perfil de estudiante'}</p><span className="student-id">Matrícula: {profile?.student_number ?? '—'}</span></div>
-    <button className="driver-banner" onClick={onDriver}><div className="quick-icon lavender"><Car size={22} /></div><div><strong>Conviértete en conductor</strong><span>Comparte tu auto y ayuda a otros estudiantes.</span></div><ChevronRight size={19} /></button>
+    <button className="driver-banner" onClick={onDriver}><div className="quick-icon lavender"><Car size={22} /></div><div><strong>{isApprovedDriver ? 'Conductor aprobado' : driverStatus === 'PENDING_REVIEW' ? 'Solicitud de conductor en revisión' : 'Conviértete en conductor'}</strong><span>{isApprovedDriver ? 'Publica tu próximo viaje desde aquí.' : driverStatus === 'PENDING_REVIEW' ? 'Tu registro está pendiente de revisión administrativa.' : 'Comparte tu auto y ayuda a otros estudiantes.'}</span></div><ChevronRight size={19} /></button>
     {profile && <EmergencyContactsEditor userId={profile.id} />}
     <button className="logout" onClick={() => { void onSignOut(); }}><span className="option-icon option-danger"><LogOut size={17} /></span>Cerrar sesión</button>
   </div>;
