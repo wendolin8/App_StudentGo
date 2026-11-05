@@ -66,7 +66,10 @@ Deno.serve(async (request) => {
           trip_request_id: companion.trip_request_id,
           purpose: 'TRIP_SHARE',
           recipient_phone: companion.phone,
-          template_name: 'studentgo_trip_share_v1',
+          // Must match the exact Meta template that is currently under review.
+          // Keep this name in sync with WhatsApp Manager; Meta template names
+          // are case-sensitive and a mismatch is rejected by the Graph API.
+          template_name: 'studentgo_trip_share',
           template_parameters: [companion.name, profile.full_name ?? 'Estudiante'],
         }).select('*').maybeSingle();
         if (error || !data) return jsonResponse({ ok: false, message: 'No se pudo registrar la solicitud de WhatsApp.' }, 500, origin);
