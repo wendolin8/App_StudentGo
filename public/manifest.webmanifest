@@ -1,0 +1,13 @@
+{
+  "name": "Student Go",
+  "short_name": "Student Go",
+  "description": "Movilidad universitaria segura y acompañamiento inteligente para estudiantes.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f6fa",
+  "theme_color": "#1f2547",
+  "lang": "es-MX",
+  "icons": [
+    { "src": "/student-go-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

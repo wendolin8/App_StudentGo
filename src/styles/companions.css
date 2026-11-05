@@ -1,0 +1,20 @@
+.companion-panel{display:grid;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid #eceef8}
+.companion-panel .contact-item{align-items:flex-start}
+.companion-panel .contact-item>div:first-child{display:grid;gap:3px;min-width:0}
+.companion-panel .contact-item>div:first-child span{font-size:10px;color:#6b7290}
+.companion-panel .small-button:disabled{opacity:.45;cursor:not-allowed}
+.track-link{word-break:break-all;font-size:10px;color:#5d51e5}
+
+.track-page{min-height:100vh;background:#f7f8ff;color:#18203d}
+.track-header{padding:20px 24px;background:#fff;border-bottom:1px solid #eceeff}
+.track-body{max-width:560px;margin:0 auto;padding:24px 18px 48px;display:grid;gap:14px}
+.track-card{display:grid;gap:12px;padding:22px;border-radius:18px;background:#fff;border:1px solid #eceeff;box-shadow:0 10px 30px #1b245109}
+.track-card h1,.track-card h2{margin:0;color:#1b2451;font-family:'Space Grotesk',sans-serif;letter-spacing:-.4px;line-height:1.2}
+.track-card h1{font-size:22px}
+.track-card h2{font-size:18px}
+.track-route{display:flex;align-items:center;gap:6px;margin:0;font-size:13px;color:#4b5275}
+.track-answers{display:grid;gap:10px}
+.track-answers button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:46px;font-weight:700;letter-spacing:.2px}
+.track-answers .track-danger{background:#c2410c;color:#fff}
+.track-answers .track-danger:hover:not(:disabled){background:#9a3412}
+.track-answers button:disabled{opacity:.6;cursor:not-allowed}
