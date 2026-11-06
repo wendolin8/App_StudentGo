@@ -18,3 +18,29 @@
 .track-answers .track-danger{background:#c2410c;color:#fff}
 .track-answers .track-danger:hover:not(:disabled){background:#9a3412}
 .track-answers button:disabled{opacity:.6;cursor:not-allowed}
+
+/* Keep the consent dialog quick on lower-powered phones: backdrop blur forces
+   expensive repainting whenever the pointer or page moves. */
+.modal-backdrop,.drawer-backdrop{overflow-y:auto;overscroll-behavior:contain;background:rgb(25 30 66 / .52);backdrop-filter:none}
+.scanner-backdrop{overflow-y:auto;background:#12172de6;backdrop-filter:none}
+.modal-card{max-height:calc(100dvh - 40px);overflow-y:auto}
+
+/* The companion consent dialog can be long. It must scroll inside the card,
+   rather than clipping its consent box and action button below the viewport. */
+.modal-card:has(.contact-form){padding:28px 22px 22px}
+.modal-card:has(.contact-form)>h2{margin:0 32px 10px 0;color:#222b55;font:700 22px 'Space Grotesk',sans-serif}
+.modal-card:has(.contact-form) .modal-lead{margin:0 0 16px;color:#9299b3;font-size:11px;line-height:1.55}
+.modal-card:has(.contact-form) .segmented{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;margin-bottom:14px}
+.modal-card:has(.contact-form) .segmented button{min-width:0;padding:9px 6px;line-height:1.25}
+.modal-card:has(.contact-form) .contact-form{display:grid;gap:8px;margin-bottom:12px}
+.modal-card:has(.contact-form) .contact-item{display:flex;align-items:center;min-height:54px;padding:10px 12px;border:1px solid #eef0f8;border-radius:11px;background:#fafaff}
+.modal-card:has(.contact-form) .contact-item strong,.modal-card:has(.contact-form) .contact-item span{display:block}
+.modal-card:has(.contact-form) .contact-item strong{color:#323a5d;font-size:11px}
+.modal-card:has(.contact-form) .contact-item span{margin-top:3px;color:#7f88a5;font-size:10px}
+.modal-card:has(.contact-form) .form-label{display:grid;gap:6px;margin:0;color:#67708e;font-size:10px;font-weight:600}
+.modal-card:has(.contact-form) .form-label input{width:100%;padding:10px 11px;border:1px solid #e6e8f3;border-radius:9px;outline:0;color:#344064;background:#fbfbfe;font-size:11px}
+.modal-card:has(.contact-form) .consent-line{display:flex;align-items:flex-start;gap:8px;line-height:1.4}
+.modal-card:has(.contact-form) .consent-line input{width:auto;margin:1px 0 0}
+.modal-card:has(.contact-form)> .form-label{display:flex;align-items:flex-start;gap:8px;margin:12px 0;color:#67708e;font-size:10px;line-height:1.45}
+.modal-card:has(.contact-form)> .form-label input{width:auto;margin:1px 0 0}
+@media (max-width:620px){.modal-backdrop{padding:10px}.modal-card{max-height:calc(100dvh - 20px)}.modal-card:has(.contact-form){padding:24px 14px 16px}.modal-card:has(.contact-form) .segmented{grid-template-columns:1fr 1fr}.modal-card:has(.contact-form) .segmented button{font-size:9px}}

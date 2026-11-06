@@ -8,8 +8,10 @@ export function useRides(userId: string, isDriver: boolean) {
   const [failed, setFailed] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  // Polling keeps the two roles in sync, but it must not redraw the entire
+  // Requests page as "loading" every fifteen seconds while someone uses it.
+  const reload = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const [passenger, driver] = await Promise.all([
       fetchPassengerRides(userId),
       isDriver ? fetchDriverTrips(userId) : Promise.resolve({ data: [] as DriverTripGroup[], error: null }),
@@ -19,12 +21,12 @@ export function useRides(userId: string, isDriver: boolean) {
     setErrorMessage(message ?? '');
     setRides(passenger.data);
     setGroups(driver.data);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   }, [userId, isDriver]);
 
   useEffect(() => {
-    void reload();
-    const timer = window.setInterval(() => { void reload(); }, 15000);
+    void reload(true);
+    const timer = window.setInterval(() => { void reload(false); }, 15000);
     return () => window.clearInterval(timer);
   }, [reload]);
 
