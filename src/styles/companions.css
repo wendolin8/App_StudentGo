@@ -44,3 +44,25 @@
 .modal-card:has(.contact-form)> .form-label{display:flex;align-items:flex-start;gap:8px;margin:12px 0;color:#67708e;font-size:10px;line-height:1.45}
 .modal-card:has(.contact-form)> .form-label input{width:auto;margin:1px 0 0}
 @media (max-width:620px){.modal-backdrop{padding:10px}.modal-card{max-height:calc(100dvh - 20px)}.modal-card:has(.contact-form){padding:24px 14px 16px}.modal-card:has(.contact-form) .segmented{grid-template-columns:1fr 1fr}.modal-card:has(.contact-form) .segmented button{font-size:9px}}
+
+/* Companion setup belongs to a passenger and a specific trip. The card itself
+   owns its scrolling area, so no panel is clipped behind the page. */
+.companion-modal{width:min(100%,620px);padding:28px 26px 22px}
+.companion-modal>h2{margin:0 38px 10px 0;color:#222b55;font:700 24px 'Space Grotesk',sans-serif;line-height:1.15}
+.companion-trip-context{display:grid;gap:3px;padding:10px 12px;margin-bottom:14px;border:1px solid #e7e7fb;border-radius:11px;background:#f8f8ff}
+.companion-trip-context strong{overflow:hidden;color:#354068;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+.companion-trip-context span{color:#858daa;font-size:10px}
+.companion-modal .segmented{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));width:100%;margin-bottom:14px}
+.companion-modal .segmented button{min-width:0;padding:9px 6px;line-height:1.25}
+.companion-modal .contact-form{display:grid;gap:8px;margin-bottom:12px}
+.companion-modal .contact-item{display:flex;align-items:center;min-height:54px;padding:10px 12px;border:1px solid #eef0f8;border-radius:11px;background:#fafaff}
+.companion-modal .contact-item strong,.companion-modal .contact-item span{display:block}
+.companion-modal .contact-item strong{color:#323a5d;font-size:11px}
+.companion-modal .contact-item span{margin-top:3px;color:#7f88a5;font-size:10px}
+.companion-modal .form-label{display:grid;gap:6px;margin:0;color:#67708e;font-size:10px;font-weight:600}
+.companion-modal .form-label input{width:100%;padding:10px 11px;border:1px solid #e6e8f3;border-radius:9px;outline:0;color:#344064;background:#fbfbfe;font-size:11px}
+.companion-modal .consent-line,.companion-modal> .form-label{display:flex;align-items:flex-start;gap:8px;line-height:1.45}
+.companion-modal .consent-line input,.companion-modal> .form-label input{width:auto;margin:1px 0 0}
+.companion-modal-actions{display:grid;grid-template-columns:minmax(120px,.65fr) 1.35fr;gap:9px;margin-top:12px}
+.companion-modal-actions .secondary-button,.companion-modal-actions .primary-button{width:100%;margin:0}
+@media (max-width:620px){.companion-modal{padding:24px 14px 16px}.companion-modal .segmented{grid-template-columns:1fr 1fr}.companion-modal .segmented button{font-size:9px}.companion-modal-actions{grid-template-columns:1fr}}

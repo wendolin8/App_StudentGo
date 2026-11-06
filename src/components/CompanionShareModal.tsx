@@ -14,7 +14,7 @@ const OPTIONS: { value: Option; label: string }[] = [
   { value: 'none', label: 'Ahora no' },
 ];
 
-export default function CompanionShareModal({ tripId, tripRequestId, userId, activeCount, onClose, onCreated }: { tripId: string; tripRequestId: string; userId: string; activeCount: number; onClose: () => void; onCreated: () => void }) {
+export default function CompanionShareModal({ tripId, tripRequestId, userId, tripLabel, activeCount, onClose, onCreated }: { tripId: string; tripRequestId: string; userId: string; tripLabel: string; activeCount: number; onClose: () => void; onCreated: () => void }) {
   const [option, setOption] = useState<Option>('contacts');
   const [contacts, setContacts] = useState<ContactRow[] | null>(null);
   const [form, setForm] = useState({ name: '', relationship: '', phone: '' });
@@ -38,21 +38,27 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, act
   const slotsFree = 3 - activeCount;
   const targetCount = (wantsContacts ? (contacts?.length ?? 0) : 0) + (wantsPerson ? 1 : 0);
 
+  async function saveNowNot() {
+    setBusy(true);
+    setError('');
+    const preference = await setCompanionshipPreference(tripId, 'NOW_NOT', false);
+    setBusy(false);
+    if (!preference.ok) { setError(preference.message); return; }
+    onCreated();
+    onClose();
+  }
+
   async function submit() {
     setError('');
     if (option === 'none') {
-      setBusy(true);
-      const preference = await setCompanionshipPreference(tripId, 'NOW_NOT', false);
-      setBusy(false);
-      if (!preference.ok) { setError(preference.message); return; }
-      onCreated();
-      onClose();
+      await saveNowNot();
       return;
     }
     if (!consent) { setError('Debes autorizar compartir tu ubicación con estas personas.'); return; }
     if (wantsContacts && (contacts?.length !== 2 || contacts.some((contact) => !contact.whatsapp_consent_at))) { setError('Debes tener exactamente dos contactos con autorización vigente de WhatsApp. Revísalos en Perfil → Seguridad.'); return; }
     if (wantsPerson && (!form.name.trim() || !form.relationship.trim() || !/^\+[1-9][0-9]{9,14}$/.test(form.phone.replace(/[\s()-]/g, '')))) { setError('Completa nombre, relación y celular internacional con lada (por ejemplo +522221234567).'); return; }
     if (wantsPerson && !recipientConsent) { setError('Confirma que la persona que te espera autorizó recibir el enlace por WhatsApp.'); return; }
+    if (wantsContacts && wantsPerson && contacts?.some((contact) => contact.phone.replace(/[\s()-]/g, '') === form.phone.replace(/[\s()-]/g, ''))) { setError('La persona que te espera ya aparece como contacto de emergencia. Evita duplicarla.'); return; }
     if (targetCount > slotsFree) { setError('Este viaje ya tiene el máximo de enlaces activos.'); return; }
 
     const selection = option === 'contacts' ? 'EMERGENCY_CONTACTS' : option === 'person' ? 'WAITING_PERSON' : 'BOTH';
@@ -85,13 +91,14 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, act
     if (created.length) onCreated();
   }
 
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card" onMouseDown={(event) => event.stopPropagation()}>
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><div className="modal-card companion-modal" role="dialog" aria-modal="true" aria-labelledby="companion-modal-title" onMouseDown={(event) => event.stopPropagation()}>
     <button className="modal-close" onClick={onClose}><X size={18} /></button>
-    <p className="eyebrow center">ACOMPAÑAMIENTO INTELIGENTE</p>
-    <h2>Comparte tu ubicación</h2>
+    <p className="eyebrow">ACOMPAÑAMIENTO INTELIGENTE · PASAJERO</p>
+    <h2 id="companion-modal-title">Viaja acompañado con Student Go</h2>
+    <div className="companion-trip-context"><strong>{tripLabel}</strong><span>Estás configurando tu propio acompañamiento como pasajero.</span></div>
 
     {links.length === 0 ? <>
-      <p className="modal-lead">Elige a quién avisar. Se prepara un enlace privado por destinatario; WhatsApp solo se envía cuando Meta confirme la solicitud. El enlace vence automáticamente.</p>
+      <p className="modal-lead">Tu abordaje fue confirmado. ¿Quieres compartir tu recorrido con alguien de confianza para que pueda saber si llegaste bien?</p>
       <div className="segmented">{OPTIONS.map((item) => <button key={item.value} className={option === item.value ? 'selected' : ''} onClick={() => setOption(item.value)}>{item.label}</button>)}</div>
 
       {wantsContacts && <div className="contact-form">
@@ -107,10 +114,10 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, act
         <label className="form-label consent-line"><input type="checkbox" checked={recipientConsent} onChange={(e) => setRecipientConsent(e.target.checked)} /> Confirmo que esta persona autorizó recibir este enlace de Student Go por WhatsApp.</label>
       </div>}
 
-      <label className="form-label"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> Autorizo compartir mi ubicación en tiempo real con estas personas durante el viaje.</label>
+      <label className="form-label"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> Autorizo compartir mi ubicación durante este recorrido con las personas seleccionadas.</label>
       <p className="scanner-status">El envío utiliza exclusivamente plantillas aprobadas de WhatsApp Business. La pantalla mostrará el estado que confirme Meta.</p>
       {error && <div className="auth-error">{error}</div>}
-      <button className="primary-button wide" disabled={busy || (option !== 'none' && (!consent || (contacts === null && wantsContacts)))} onClick={() => { void submit(); }}><UserPlus size={17} /> {busy ? 'Guardando decisión...' : option === 'none' ? 'Continuar sin compartir ubicación' : 'Activar acompañamiento por WhatsApp'}</button>
+      <div className="companion-modal-actions"><button className="secondary-button" disabled={busy} onClick={() => { void saveNowNot(); }}>Ahora no</button><button className="primary-button" disabled={busy || option === 'none' || !consent || (contacts === null && wantsContacts)} onClick={() => { void submit(); }}><UserPlus size={17} /> {busy ? 'Guardando...' : 'Guardar acompañamiento'}</button></div>
     </> : <>
       <p className="modal-lead">Estado confirmado por la integración de WhatsApp Business:</p>
       {links.map((item, index) => <div className="contact-item" key={`${item.label}-${index}`}>

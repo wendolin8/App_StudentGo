@@ -26,6 +26,7 @@ export type RideRequest = {
   passengerConfirmedAt: string | null;
   tripStartedAt: string | null;
   tripCompletedAt: string | null;
+  qrUsedAt: string | null;
 };
 
 export type DriverRequest = RideRequest & { passengerName: string };
@@ -56,10 +57,11 @@ type RequestRow = {
   passenger_confirmed_at: string | null;
   trip_started_at: string | null;
   trip_completed_at: string | null;
+  qr_used_at: string | null;
 };
 
 const TRIP_SELECT = 'id, driver_id, origin_text, destination_text, departure_at, suggested_fare, vehicle_name, vehicle_plates, status, meeting_point_reached_at';
-const REQUEST_SELECT = 'id, trip_id, passenger_id, status, fare, requested_at, passenger_confirmed_at, trip_started_at, trip_completed_at';
+const REQUEST_SELECT = 'id, trip_id, passenger_id, status, fare, requested_at, passenger_confirmed_at, trip_started_at, trip_completed_at, qr_used_at';
 
 function toTrip(row: TripRow): RideTrip {
   return {
@@ -73,7 +75,7 @@ function toRequest(row: RequestRow): RideRequest {
   return {
     id: row.id, tripId: row.trip_id, passengerId: row.passenger_id, status: row.status, fare: Number(row.fare ?? 0),
     requestedAt: row.requested_at, passengerConfirmedAt: row.passenger_confirmed_at,
-    tripStartedAt: row.trip_started_at, tripCompletedAt: row.trip_completed_at,
+    tripStartedAt: row.trip_started_at, tripCompletedAt: row.trip_completed_at, qrUsedAt: row.qr_used_at,
   };
 }
 
@@ -123,6 +125,15 @@ export async function fetchDriverTrips(userId: string): Promise<RideFetchResult<
 
 export function isFinishedTrip(status: RideTripStatus): boolean {
   return status === 'COMPLETED' || status === 'CANCELLED';
+}
+
+/**
+ * The companion setup is a passenger-only UI step. A request becomes eligible
+ * only after its own QR was actually consumed by the driver; accepting a seat
+ * or starting another passenger's trip must never trigger it.
+ */
+export function canOfferPassengerCompanionship(request: RideRequest): boolean {
+  return request.status === 'ACCEPTED' && Boolean(request.qrUsedAt);
 }
 
 export const REQUEST_LABEL: Record<RequestStatus, string> = { PENDING: 'Pendiente', ACCEPTED: 'Aceptada', REJECTED: 'Rechazada', CANCELLED: 'Cancelada' };
