@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { UserPlus, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { createCompanion, setCompanionshipPreference, type CompanionInput } from '@/lib/companions';
+import { getCurrentPosition } from '@/lib/maps';
 
 type Option = 'contacts' | 'person' | 'both' | 'none';
 type ContactRow = { name: string; relationship: string; phone: string; whatsapp_consent_at: string | null };
@@ -61,8 +62,16 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
     if (wantsContacts && wantsPerson && contacts?.some((contact) => contact.phone.replace(/[\s()-]/g, '') === form.phone.replace(/[\s()-]/g, ''))) { setError('La persona que te espera ya aparece como contacto de emergencia. Evita duplicarla.'); return; }
     if (targetCount > slotsFree) { setError('Este viaje ya tiene el máximo de enlaces activos.'); return; }
 
-    const selection = option === 'contacts' ? 'EMERGENCY_CONTACTS' : option === 'person' ? 'WAITING_PERSON' : 'BOTH';
     setBusy(true);
+    let initialPosition;
+    try {
+      initialPosition = await getCurrentPosition();
+    } catch (locationError) {
+      setBusy(false);
+      setError(locationError instanceof Error ? `${locationError.message} No se creó ningún enlace ni se solicitó WhatsApp.` : 'No pudimos obtener tu ubicación. No se creó ningún enlace ni se solicitó WhatsApp.');
+      return;
+    }
+    const selection = option === 'contacts' ? 'EMERGENCY_CONTACTS' : option === 'person' ? 'WAITING_PERSON' : 'BOTH';
     const preference = await setCompanionshipPreference(tripId, selection, true);
     if (!preference.ok) { setBusy(false); setError(preference.message); return; }
     const inputs: { label: string; input: CompanionInput }[] = [];
@@ -73,6 +82,16 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
     for (const item of inputs) {
       const outcome = await createCompanion(tripRequestId, item.input);
       if (!outcome.ok) { created.push({ label: item.label, status: 'NO_CREADO', detail: outcome.message }); continue; }
+      const { data: locationSaved, error: locationError } = await supabase.rpc('record_companion_location', {
+        p_trip_request_id: tripRequestId,
+        p_latitude: initialPosition.lat,
+        p_longitude: initialPosition.lng,
+      });
+      if (locationError || locationSaved !== true) {
+        created.push({ label: item.label, status: 'GPS_PENDIENTE', detail: 'El enlace se creó, pero no se solicitó WhatsApp porque no se pudo guardar la ubicación inicial.' });
+        setError('No se pudo guardar la ubicación inicial. No se notificó a esta persona.');
+        continue;
+      }
       const { data: sendData, error: sendError } = await supabase.functions.invoke('whatsapp-send', { body: { action: 'SHARE_LINK', companionId: outcome.companionId, token: outcome.token } });
       if (sendError || !sendData?.ok) {
         const responseStatus = sendError && typeof sendError === 'object' && 'context' in sendError
