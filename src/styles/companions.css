@@ -18,6 +18,9 @@
 .track-answers .track-danger{background:#c2410c;color:#fff}
 .track-answers .track-danger:hover:not(:disabled){background:#9a3412}
 .track-answers button:disabled{opacity:.6;cursor:not-allowed}
+.track-map-wrap{display:grid;gap:10px}
+.track-live-map{height:280px;width:100%;overflow:hidden;border:1px solid #e6e9f6;border-radius:14px;background:#f2f4fb}
+.track-live-map .leaflet-control-attribution{font-size:9px}
 
 /* Keep the consent dialog quick on lower-powered phones: backdrop blur forces
    expensive repainting whenever the pointer or page moves. */
