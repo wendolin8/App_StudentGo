@@ -69,6 +69,7 @@ function App() {
   const [persistedTrips, setPersistedTrips] = useState<Trip[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [requestStatuses, setRequestStatuses] = useState<Record<string, TripStatus>>({});
+  const [requestsRefreshVersion, setRequestsRefreshVersion] = useState(0);
   const [showDriverFlow, setShowDriverFlow] = useState(false);
   const [showPublishFlow, setShowPublishFlow] = useState(false);
   const [approvedVehicles, setApprovedVehicles] = useState<Array<{ id: string; label: string; capacity: number }>>([]);
@@ -193,7 +194,13 @@ function App() {
     if (!user || !draft.origin || !draft.destination || !routeInfo) return;
     const { error } = await supabase.rpc('publish_trip_with_vehicle', { p_vehicle_id: vehicleId, p_origin_text: draft.originLabel, p_destination_text: draft.destinationLabel, p_origin_lat: draft.origin.lat, p_origin_lng: draft.origin.lng, p_destination_lat: draft.destination.lat, p_destination_lng: draft.destination.lng, p_departure_at: new Date(draft.departureAt).toISOString(), p_available_seats: draft.availableSeats, p_distance_km: routeInfo.distanceKm, p_estimated_minutes: Math.round(routeInfo.durationMin), p_suggested_fare: draft.fare, p_notes: null });
     if (error) { setAuthError('No pudimos publicar tu viaje. Verifica que tu vehículo siga aprobado.'); return; }
-    await loadTrips(); setShowPublishFlow(false);
+    // RequestsView owns the driver's published-trip query. Refresh that view
+    // immediately after the RPC succeeds instead of making the driver reload
+    // the browser or wait for its background synchronisation interval.
+    await Promise.all([loadTrips(), loadRequestStatuses()]);
+    setShowPublishFlow(false);
+    setActiveTab('requests');
+    setRequestsRefreshVersion((current) => current + 1);
   }
 
   async function requestTrip(tripId: string): Promise<void> {
@@ -265,7 +272,7 @@ function App() {
         </header>
 
         {activeTab === 'home' && <HomeView searchFrom={searchFrom} searchTo={searchTo} setSearchFrom={setSearchFrom} setSearchTo={setSearchTo} trips={visibleTrips} statuses={requestStatuses} onSelectTrip={setSelectedTrip} onDriver={openDriverAction} onHistory={() => setActiveTab('history')} />}
-        {activeTab === 'requests' && <RequestsView userId={user.id} isDriver={profile.role === 'DRIVER'} canPublish={isApprovedDriver} onPublish={() => setShowPublishFlow(true)} onOpenSafety={() => setActiveTab('safety')} />}
+        {activeTab === 'requests' && <RequestsView key={requestsRefreshVersion} userId={user.id} isDriver={profile.role === 'DRIVER'} canPublish={isApprovedDriver} onPublish={() => setShowPublishFlow(true)} onOpenSafety={() => setActiveTab('safety')} />}
         {activeTab === 'history' && <HistoryView userId={user.id} isDriver={profile.role === 'DRIVER'} />}
         {activeTab === 'safety' && <SafetyView user={user} />}
         {activeTab === 'alerts' && <NotificationsView user={user} onChanged={() => { void loadUnread(user.id); }} onOpen={(target) => setActiveTab(target === 'trips' ? 'requests' : 'safety')} />}
