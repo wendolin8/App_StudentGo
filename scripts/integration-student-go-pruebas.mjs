@@ -204,7 +204,7 @@ const tripValues = {
   p_vehicle_id: vehicle.id,
   p_origin_text: `ORIGEN FICTICIO DE PRUEBA ${tripRunId}`,
   p_destination_text: `DESTINO FICTICIO DE PRUEBA ${tripRunId}`,
-  p_origin_lat: null, p_origin_lng: null, p_destination_lat: null, p_destination_lng: null,
+  p_origin_lat: 19.0497, p_origin_lng: -98.2195, p_destination_lat: 19.0730, p_destination_lng: -98.2027,
   p_departure_at: new Date(Date.now() + 60 * 60_000).toISOString(), p_available_seats: 2,
   p_distance_km: 5, p_estimated_minutes: 20, p_suggested_fare: 25, p_notes: 'Datos ficticios aislados; sin coordenadas GPS.',
 };
@@ -214,9 +214,13 @@ const { data: foundTrip, error: searchError } = await passenger.client.from('tri
 if (searchError || foundTrip.status !== 'PUBLISHED') throw new Error(`Búsqueda de pasajero falló: ${searchError?.message ?? 'viaje no visible'}`);
 assert(true, 'conductor publica viaje por RPC y pasajero lo encuentra por RLS');
 
-const { data: requestRow, error: requestError } = await passenger.client.from('trip_requests')
-  .insert({ trip_id: tripId, passenger_id: passenger.user.id, fare: foundTrip.suggested_fare })
-  .select('id, status').single();
+const { data: submittedRequest, error: requestError } = await passenger.client.functions.invoke('calculate-fare', {
+  body: { trip_id: tripId, dropoff_text: `DESTINO FICTICIO DE PRUEBA ${tripRunId}`, dropoff_lat: 19.0730, dropoff_lng: -98.2027, submit: true },
+});
+const { data: requestRow, error: requestRowError } = submittedRequest?.request_id
+  ? await passenger.client.from('trip_requests').select('id, status').eq('id', submittedRequest.request_id).single()
+  : { data: null, error: requestError };
+if (!requestRow || requestRowError) throw new Error('No fue posible consultar la solicitud recién creada.');
 if (requestError || requestRow.status !== 'PENDING') throw new Error(`Solicitud de lugar falló: ${requestError?.message ?? requestRow?.status}`);
 const { data: accepted, error: acceptError } = await driver.client.rpc('accept_ride_request', { request_id: requestRow.id });
 if (acceptError || !accepted?.[0]?.ok || !accepted[0].qr_token) throw new Error(`Aceptación de viaje falló: ${acceptError?.message ?? accepted?.[0]?.reason}`);

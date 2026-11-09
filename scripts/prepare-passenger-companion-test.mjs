@@ -49,7 +49,7 @@ const { data: tripId, error: publishError } = await driver.client.rpc('publish_t
   p_vehicle_id: vehicle.id,
   p_origin_text: `PRUEBA GPS PASAJERO ${run} - UTP`,
   p_destination_text: `PRUEBA GPS PASAJERO ${run} - Destino seguro`,
-  p_origin_lat: null, p_origin_lng: null, p_destination_lat: null, p_destination_lng: null,
+  p_origin_lat: 19.0497, p_origin_lng: -98.2195, p_destination_lat: 19.0730, p_destination_lng: -98.2027,
   p_departure_at: new Date(Date.now() + 60 * 60_000).toISOString(),
   p_available_seats: Math.max(1, vehicle.passenger_capacity - 1),
   p_distance_km: 3, p_estimated_minutes: 15, p_suggested_fare: 25,
@@ -62,8 +62,13 @@ const { data: visibleTrip, error: visibleError } = await passenger.client.from('
 if (visibleError || visibleTrip?.status !== 'PUBLISHED') throw new Error('El pasajero no pudo encontrar el viaje publicado.');
 assert(true, 'el pasajero ve el viaje publicado por el conductor mediante RLS');
 
-const { data: request, error: requestError } = await passenger.client.from('trip_requests')
-  .insert({ trip_id: tripId, passenger_id: passenger.user.id, fare: visibleTrip.suggested_fare }).select('id, status').single();
+const { data: submitted, error: requestError } = await passenger.client.functions.invoke('calculate-fare', {
+  body: { trip_id: tripId, dropoff_text: 'Parque Puebla', dropoff_lat: 19.0730, dropoff_lng: -98.2027, submit: true },
+});
+const { data: request, error: requestRowError } = submitted?.request_id
+  ? await passenger.client.from('trip_requests').select('id, status').eq('id', submitted.request_id).single()
+  : { data: null, error: requestError };
+if (!request || requestRowError) throw new Error('No fue posible consultar la solicitud recién creada.');
 if (requestError || request?.status !== 'PENDING') throw new Error(`No se creó la solicitud del pasajero: ${requestError?.message ?? ''}`);
 
 const { data: accepted, error: acceptError } = await driver.client.rpc('accept_ride_request', { request_id: request.id });

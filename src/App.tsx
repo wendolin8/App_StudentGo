@@ -13,7 +13,10 @@ import HistoryView from '@/components/HistoryView';
 import AdminDashboard from '@/components/AdminDashboard';
 import CompanionTrackingPage from '@/components/CompanionTrackingPage';
 import EmergencyContactsEditor from '@/components/EmergencyContactsEditor';
-import { type LatLng, type RouteInfo, createMap, addMarker, drawRoute, fitToRoute, searchPlace, getRoute, getCurrentPosition } from '@/lib/maps';
+import DropoffPicker from '@/components/DropoffPicker';
+import { type LatLng, type PlaceResult, type RouteInfo, createMap, addMarker, drawRoute, fitToRoute, searchPlace, getRoute, getCurrentPosition, haversineKm } from '@/lib/maps';
+import { calculateFormulaFare, type FareConfig } from '@/lib/fares';
+import { calculateTripFare, type FareCalculation } from '@/lib/faresClient';
 
 type Tab = 'home' | 'requests' | 'history' | 'safety' | 'alerts' | 'profile' | 'admin';
 type TripStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'COMPLETED';
@@ -203,14 +206,17 @@ function App() {
     setRequestsRefreshVersion((current) => current + 1);
   }
 
-  async function requestTrip(tripId: string): Promise<void> {
-    if (!user) return;
-    const trip = persistedTrips.find((item) => item.id === tripId);
-    if (!trip) return;
-    const { error } = await supabase.from('trip_requests').insert({ trip_id: tripId, passenger_id: user.id, fare: trip.price });
-    if (error) { setAuthError('No fue posible enviar la solicitud.'); return; }
+  async function requestTrip(tripId: string, dropoff: PlaceResult): Promise<boolean> {
+    if (!user) return false;
+    try {
+      const result = await calculateTripFare(tripId, dropoff, true);
+      if (!result.request_id) throw new Error('La solicitud no fue confirmada por el servidor.');
+    } catch {
+      return false;
+    }
     setRequestStatuses((current) => ({ ...current, [tripId]: 'PENDING' }));
     setSelectedTrip(null);
+    return true;
   }
 
   async function signOut(): Promise<void> {
@@ -285,7 +291,7 @@ function App() {
       </main>
 
       {showMenu && <MobileDrawer active={activeTab} isAdmin={profile?.role === 'ADMIN'} onClose={() => setShowMenu(false)} onSelect={(tab) => { setActiveTab(tab); setShowMenu(false); }} onDriver={() => { openDriverAction(); setShowMenu(false); }} />}
-      {selectedTrip && <TripModal trip={selectedTrip} status={requestStatuses[selectedTrip.id]} user={user} onClose={() => setSelectedTrip(null)} onRequest={() => { void requestTrip(selectedTrip.id); }} />}
+      {selectedTrip && <TripModal trip={selectedTrip} status={requestStatuses[selectedTrip.id]} onClose={() => setSelectedTrip(null)} onRequest={(dropoff) => requestTrip(selectedTrip.id, dropoff)} />}
       {showDriverFlow && <DriverModal onClose={() => setShowDriverFlow(false)} onSubmit={(draft) => { void registerDriver(draft); }} status={driverApplicationStatus} />}
       {showPublishFlow && <PublishTripModal vehicles={approvedVehicles} onClose={() => setShowPublishFlow(false)} onPublish={(draft, vehicleId, route) => { void publishTrip(draft, vehicleId, route); }} />}
     </div>
@@ -330,7 +336,7 @@ function MapCard() {
 }
 
 function TripCard({ trip, status, onSelect }: { trip: Trip; status?: TripStatus; onSelect: () => void }) {
-  return <article className="trip-card"><div className="trip-main"><div className="avatar trip-avatar" style={{ background: trip.color }}>{trip.initials}</div><div className="trip-copy"><strong>{trip.driver}</strong><span>{trip.car}</span></div><div className="trip-price"><strong>${trip.price}</strong><span>MXN</span></div></div><div className="trip-route"><div><span className="route-dot purple" />{trip.from}</div><div className="route-connector" /><div><span className="route-dot dark" />{trip.to}</div></div><div className="trip-meta"><span><Clock3 size={14} /> {trip.time}</span><span><UsersRound size={14} /> {trip.seats} lugares</span>{status ? <span className={`status-pill ${status.toLowerCase()}`}>{status === 'PENDING' ? 'Pendiente' : status === 'ACCEPTED' ? 'Aceptado' : status === 'COMPLETED' ? 'Completado' : status}</span> : <button className="small-button" onClick={onSelect}>Solicitar</button>}</div></article>;
+  return <article className="trip-card"><div className="trip-main"><div className="avatar trip-avatar" style={{ background: trip.color }}>{trip.initials}</div><div className="trip-copy"><strong>{trip.driver}</strong><span>{trip.car}</span></div><div className="trip-price"><strong>${trip.price}</strong><span>MXN · ref.</span></div></div><div className="trip-route"><div><span className="route-dot purple" />{trip.from}</div><div className="route-connector" /><div><span className="route-dot dark" />{trip.to}</div></div><div className="trip-meta"><span><Clock3 size={14} /> {trip.time}</span><span><UsersRound size={14} /> {trip.seats} lugares</span>{status ? <span className={`status-pill ${status.toLowerCase()}`}>{status === 'PENDING' ? 'Pendiente' : status === 'ACCEPTED' ? 'Aceptado' : status === 'COMPLETED' ? 'Completado' : status}</span> : <button className="small-button" onClick={onSelect}>Solicitar</button>}</div></article>;
 }
 
 
@@ -383,8 +389,32 @@ function AdminView() {
 }
 
 
-function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: TripStatus; user: User; onClose: () => void; onRequest: () => void }) {
+const LOCAL_FARE_CONFIG: FareConfig = { baseFare: 10, perKm: 2.5, perMinute: 0.8, gasolinePerKm: 0.6, minFare: 15, maxFare: 1000 };
+
+function estimateFareOffline(trip: Trip, dropoff: PlaceResult, route: RouteInfo | null): FareCalculation {
+  if (!trip.origin) throw new Error('Este viaje no tiene origen disponible para estimar la tarifa.');
+  const straightLineKm = haversineKm(trip.origin, dropoff);
+  const tripKm = Math.max(trip.distanceKm, straightLineKm, 0.01);
+  const passengerKm = Math.min(route?.distanceKm ?? straightLineKm, tripKm);
+  const passengerMin = route?.durationMin ?? (trip.durationMin * passengerKm / tripKm);
+  const formula = calculateFormulaFare({ passengerKm, passengerMin, tripKm, config: LOCAL_FARE_CONFIG });
+  return {
+    fare: formula.total,
+    source: 'formula',
+    request_id: null,
+    explanation: 'Estimación local aproximada. El servidor recalculará la ruta y la tarifa al enviar la solicitud.',
+    breakdown: { formula_total: formula.total, adjustment_pct: 0, components: formula, final_total: formula.total },
+  };
+}
+
+function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: TripStatus; onClose: () => void; onRequest: (dropoff: PlaceResult) => Promise<boolean> }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [dropoff, setDropoff] = useState<PlaceResult | null>(null);
+  const [quote, setQuote] = useState<FareCalculation | null>(null);
+  const [isEstimated, setIsEstimated] = useState(false);
+  const [loadingQuote, setLoadingQuote] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState('');
   useEffect(() => {
     if (!trip.origin || !trip.destination || !containerRef.current) return;
     const map = createMap(containerRef.current, trip.origin, 13);
@@ -392,12 +422,54 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
     void getRoute(trip.origin, trip.destination).then((route) => { if (route) { drawRoute(map, route.geometry); fitToRoute(map, route.geometry); } });
     return () => { map.remove(); };
   }, [trip]);
+
+  async function selectDropoff(place: PlaceResult, route: RouteInfo | null): Promise<void> {
+    setDropoff(place);
+    setQuote(null);
+    setMessage('');
+    setLoadingQuote(true);
+    try {
+      setQuote(await calculateTripFare(trip.id, place));
+      setIsEstimated(false);
+    } catch {
+      try {
+        setQuote(estimateFareOffline(trip, place, route));
+        setIsEstimated(true);
+      } catch (error) {
+        setMessage((error as Error).message);
+      }
+    } finally {
+      setLoadingQuote(false);
+    }
+  }
+
+  async function sendRequest(): Promise<void> {
+    if (!dropoff) return;
+    setSubmitting(true);
+    setMessage('');
+    const sent = await onRequest(dropoff);
+    if (!sent) {
+      setMessage('No se pudo enviar la solicitud. Revisa tu conexión e inténtalo de nuevo.');
+      setSubmitting(false);
+    }
+  }
+
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card trip-modal" onMouseDown={(event) => event.stopPropagation()}>
     <button className="modal-close" onClick={onClose}><X size={18} /></button><div ref={containerRef} className="leaflet-container-custom modal-map" />
     <div className="modal-content"><p className="eyebrow">DETALLE DEL VIAJE</p><h2>{trip.route}</h2>
       <div className="detail-grid"><div><MapPin size={17} /><span>Salida<strong>{trip.time}</strong></span></div><div><Car size={17} /><span>Vehículo<strong>{trip.car}</strong></span></div><div><UsersRound size={17} /><span>Disponibles<strong>{trip.seats} lugares</strong></span></div><div><Navigation size={17} /><span>Distancia<strong>{trip.distanceKm.toFixed(1)} km · {Math.round(trip.durationMin)} min</strong></span></div></div>
-      <div className="fare-card"><p className="eyebrow">TARIFA DEFINIDA POR EL CONDUCTOR</p><strong>${trip.price} MXN</strong><span>Monto informado al publicar el viaje.</span></div>
-      {status ? <div className="request-confirmed"><Check size={20} /><div><strong>{status === 'PENDING' ? 'Solicitud enviada' : status === 'ACCEPTED' ? 'Viaje confirmado' : status === 'COMPLETED' ? 'Viaje completado' : `Solicitud ${status}`}</strong><span>{status === 'PENDING' ? 'Te avisaremos cuando el conductor responda.' : 'Tu lugar está reservado.'}</span></div></div> : <button className="primary-button wide" onClick={onRequest}>Solicitar lugar <ChevronRight size={17} /></button>}
+      <div className="fare-card"><p className="eyebrow">REFERENCIA PARA EL RECORRIDO COMPLETO</p><strong>${trip.price} MXN</strong><span>Tu tarifa dependerá del punto donde bajes.</span></div>
+      {status ? <div className="request-confirmed"><Check size={20} /><div><strong>{status === 'PENDING' ? 'Solicitud enviada' : status === 'ACCEPTED' ? 'Viaje confirmado' : status === 'COMPLETED' ? 'Viaje completado' : `Solicitud ${status}`}</strong><span>{status === 'PENDING' ? 'Te avisaremos cuando el conductor responda.' : 'Tu lugar está reservado.'}</span></div></div> : <>
+        <DropoffPicker origin={trip.origin} destination={trip.destination} onSelected={(place, route) => { void selectDropoff(place, route); }} />
+        {loadingQuote && <p className="scanner-status">Calculando tu tarifa...</p>}
+        {quote && <div className="fare-card"><p className="eyebrow">TARIFA INDIVIDUAL {isEstimated ? 'ESTIMADA' : 'PARA TU TRAMO'}</p><strong>${quote.fare.toFixed(2)} MXN</strong>
+          <span>{isEstimated ? 'Fórmula local aproximada' : quote.source === 'ai' ? 'Fórmula base con ajuste de Gemini' : 'Calculada con la fórmula base'}</span>
+          <div className="fare-breakdown"><div><span>Base proporcional</span><strong>${quote.breakdown.components.base.toFixed(2)}</strong></div><div><span>Distancia</span><strong>${quote.breakdown.components.distance.toFixed(2)}</strong></div><div><span>Tiempo</span><strong>${quote.breakdown.components.time.toFixed(2)}</strong></div><div><span>Gasolina</span><strong>${quote.breakdown.components.gasoline.toFixed(2)}</strong></div>{quote.breakdown.adjustment_pct !== 0 && <div><span>Ajuste IA ({quote.breakdown.adjustment_pct}%)</span><strong>${(quote.fare - quote.breakdown.formula_total).toFixed(2)}</strong></div>}</div>
+          <p className="fare-explanation">{quote.explanation}</p>
+        </div>}
+        {message && <p className="scanner-status" role="alert">{message}</p>}
+        <button className="primary-button wide" disabled={!dropoff || !quote || loadingQuote || submitting} onClick={() => { void sendRequest(); }}>{submitting ? 'Enviando solicitud...' : 'Solicitar lugar'} <ChevronRight size={17} /></button>
+      </>}
       <button className="secondary-button wide" onClick={onClose}>Cerrar</button></div>
   </div></div>;
 }
@@ -416,19 +488,55 @@ function PublishTripModal({ vehicles, onClose, onPublish }: { vehicles: Array<{ 
   const [vehicleId, setVehicleId] = useState(vehicles[0]?.id ?? '');
   const [draft, setDraft] = useState<PublishDraft>({ origin: null, destination: null, originLabel: '', destinationLabel: '', departureAt: new Date(Date.now() + 3600000).toISOString().slice(0, 16), availableSeats: 1, fare: 0 });
   const [route, setRoute] = useState<RouteInfo | null>(null);
+  const [referenceFare, setReferenceFare] = useState<number | null>(null);
+  const [fareMessage, setFareMessage] = useState('');
   const [searching, setSearching] = useState(false);
   const vehicle = vehicles.find((item) => item.id === vehicleId);
-  async function calculateRoute(): Promise<void> { if (!draft.origin || !draft.destination) return; setSearching(true); setRoute(await getRoute(draft.origin, draft.destination)); setSearching(false); }
+  async function calculateRoute(): Promise<void> {
+    if (!draft.origin || !draft.destination) return;
+    setSearching(true);
+    setRoute(null);
+    setReferenceFare(null);
+    setFareMessage('');
+    try {
+      const routeInfo = await getRoute(draft.origin, draft.destination);
+      if (!routeInfo) throw new Error('No se encontró una ruta por carretera.');
+      const { data, error } = await supabase.from('fare_config')
+        .select('base_fare, per_km, per_minute, gasoline_per_km, min_fare, max_fare').eq('id', 1).single();
+      if (error || !data) throw new Error('No se pudo cargar la configuración de tarifas.');
+      const config: FareConfig = {
+        baseFare: Number(data.base_fare), perKm: Number(data.per_km), perMinute: Number(data.per_minute),
+        gasolinePerKm: Number(data.gasoline_per_km), minFare: Number(data.min_fare), maxFare: Number(data.max_fare),
+      };
+      const fare = calculateFormulaFare({ passengerKm: routeInfo.distanceKm, passengerMin: routeInfo.durationMin, tripKm: routeInfo.distanceKm, config }).total;
+      setRoute(routeInfo);
+      setReferenceFare(fare);
+      setDraft((current) => ({ ...current, fare }));
+    } catch (error) {
+      setFareMessage((error as Error).message);
+    } finally {
+      setSearching(false);
+    }
+  }
+  function updatePlace(key: 'origin' | 'destination', place: PlaceResult): void {
+    if (key === 'origin') {
+      setDraft((current) => ({ ...current, origin: { lat: place.lat, lng: place.lng }, originLabel: place.label }));
+    } else {
+      setDraft((current) => ({ ...current, destination: { lat: place.lat, lng: place.lng }, destinationLabel: place.label }));
+    }
+    setRoute(null);
+    setReferenceFare(null);
+  }
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal-card driver-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={onClose}><X size={18} /></button><p className="eyebrow center">PUBLICAR VIAJE</p><h2>Comparte tu camino</h2>
     <label className="form-label">Vehículo aprobado<select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}>{vehicles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label>
-    <PlaceSearch label="Origen" value={draft.originLabel} onSelect={(place) => setDraft({ ...draft, origin: { lat: place.lat, lng: place.lng }, originLabel: place.label })} />
-    <PlaceSearch label="Destino" value={draft.destinationLabel} onSelect={(place) => setDraft({ ...draft, destination: { lat: place.lat, lng: place.lng }, destinationLabel: place.label })} />
+    <PlaceSearch label="Origen" value={draft.originLabel} onSelect={(place) => updatePlace('origin', place)} />
+    <PlaceSearch label="Destino" value={draft.destinationLabel} onSelect={(place) => updatePlace('destination', place)} />
     <label className="form-label">Fecha y hora<input type="datetime-local" value={draft.departureAt} onChange={(event) => setDraft({ ...draft, departureAt: event.target.value })} /></label>
     <label className="form-label">Lugares disponibles<select value={draft.availableSeats} onChange={(event) => setDraft({ ...draft, availableSeats: Number(event.target.value) })}>{Array.from({ length: vehicle?.capacity ?? 1 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
-    <label className="form-label">Tarifa por pasajero (MXN)<input type="number" min="0" step="1" value={draft.fare || ''} onChange={(event) => setDraft({ ...draft, fare: Number(event.target.value) })} placeholder="Ej. 25" /></label>
-    <button className="secondary-button wide" disabled={!draft.origin || !draft.destination || searching} onClick={() => { void calculateRoute(); }}>{searching ? 'Calculando ruta...' : 'Calcular ruta'}</button>
-    {route && <div className="fare-card"><span>{route.distanceKm.toFixed(1)} km · {Math.round(route.durationMin)} min</span><strong>${draft.fare || 0} MXN</strong><span>Tarifa definida manualmente por el conductor.</span></div>}
-    <button className="primary-button wide" disabled={!route || !vehicleId || draft.fare < 0} onClick={() => onPublish(draft, vehicleId, route)}>Publicar viaje</button>
+    <button className="secondary-button wide" disabled={!draft.origin || !draft.destination || searching} onClick={() => { void calculateRoute(); }}>{searching ? 'Calculando ruta y tarifa...' : 'Calcular ruta y tarifa'}</button>
+    {fareMessage && <p className="scanner-status" role="alert">{fareMessage}</p>}
+    {route && referenceFare !== null && <div className="fare-card"><p className="eyebrow">TARIFA DE REFERENCIA POR PASAJERO</p><span>{route.distanceKm.toFixed(1)} km · {Math.round(route.durationMin)} min</span><strong>${referenceFare.toFixed(2)} MXN</strong><span>Cada pasajero verá una tarifa individual según su punto de bajada.</span></div>}
+    <button className="primary-button wide" disabled={!route || referenceFare === null || !vehicleId} onClick={() => onPublish(draft, vehicleId, route)}>Publicar viaje</button>
   </div></div>;
 }
 
