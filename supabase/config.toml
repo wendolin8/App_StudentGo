@@ -430,3 +430,6 @@ verify_jwt = false
 [functions.whatsapp-webhook]
 verify_jwt = false
 
+[functions.calculate-fare]
+verify_jwt = false
+

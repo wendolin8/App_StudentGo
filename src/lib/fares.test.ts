@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateFormulaFare } from './fares';
+import { applyFareAdjustment, calculateFormulaFare, parseGeminiAdjustment } from './fares';
 
 const config = { baseFare: 10, perKm: 2.5, perMinute: 0.8, gasolinePerKm: 0.6, minFare: 15 };
 
@@ -48,5 +48,22 @@ describe('calculateFormulaFare', () => {
       tripKm: 10,
       config: { ...config, minFare: 150, maxFare: 100 },
     })).toThrow(RangeError);
+  });
+
+  it('valida la respuesta de Gemini y acota el ajuste a veinte por ciento', () => {
+    expect(parseGeminiAdjustment('{"adjustment_pct": 45, "reason": "Mayor demanda"}')).toEqual({
+      adjustmentPct: 20,
+      reason: 'Mayor demanda',
+    });
+    expect(parseGeminiAdjustment('{"adjustment_pct": -45, "reason": "Menor demanda"}')?.adjustmentPct).toBe(-20);
+    expect(parseGeminiAdjustment('{"adjustment_pct": "10", "reason": "No numérico"}')).toBeNull();
+    expect(parseGeminiAdjustment('{"adjustment_pct": 5, "reason": "  "}')).toBeNull();
+    expect(parseGeminiAdjustment('respuesta que no es JSON')).toBeNull();
+  });
+
+  it('aplica el ajuste sin rebasar los límites de tarifa', () => {
+    expect(applyFareAdjustment(100, 20, 15, 1000)).toBe(120);
+    expect(applyFareAdjustment(20, -20, 18, 1000)).toBe(18);
+    expect(applyFareAdjustment(950, 20, 15, 1000)).toBe(1000);
   });
 });
