@@ -26,3 +26,8 @@ dist-ssr
 supabase/.temp/
 supabase/.tmp-*.sql
 supabase/backups/
+
+# Variables de entorno
+.env
+.env.*
+!.env.pruebas.example
