@@ -50,7 +50,8 @@
 
 /* Companion setup belongs to a passenger and a specific trip. The card itself
    owns its scrolling area, so no panel is clipped behind the page. */
-.companion-modal{width:min(100%,620px);padding:28px 26px 22px}
+.companion-modal-backdrop{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;isolation:isolate}
+.companion-modal{box-sizing:border-box;width:min(620px,calc(100vw - 40px));max-height:calc(100dvh - 40px);margin:auto;padding:28px 26px 22px;overflow-y:auto}
 .companion-modal>h2{margin:0 38px 10px 0;color:#222b55;font:700 24px 'Space Grotesk',sans-serif;line-height:1.15}
 .companion-trip-context{display:grid;gap:3px;padding:10px 12px;margin-bottom:14px;border:1px solid #e7e7fb;border-radius:11px;background:#f8f8ff}
 .companion-trip-context strong{overflow:hidden;color:#354068;font-size:11px;text-overflow:ellipsis;white-space:nowrap}
@@ -68,4 +69,4 @@
 .companion-modal .consent-line input,.companion-modal> .form-label input{width:auto;margin:1px 0 0}
 .companion-modal-actions{display:grid;grid-template-columns:minmax(120px,.65fr) 1.35fr;gap:9px;margin-top:12px}
 .companion-modal-actions .secondary-button,.companion-modal-actions .primary-button{width:100%;margin:0}
-@media (max-width:620px){.companion-modal{padding:24px 14px 16px}.companion-modal .segmented{grid-template-columns:1fr 1fr}.companion-modal .segmented button{font-size:9px}.companion-modal-actions{grid-template-columns:1fr}}
+@media (max-width:620px){.companion-modal-backdrop{align-items:flex-start;padding:10px}.companion-modal{width:100%;max-height:calc(100dvh - 20px);padding:24px 14px 16px}.companion-modal .segmented{grid-template-columns:1fr 1fr}.companion-modal .segmented button{font-size:9px}.companion-modal-actions{grid-template-columns:1fr}}
