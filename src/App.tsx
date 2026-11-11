@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { offlineNotice, useOnline } from '@/components/credentials/useOnline';
+import CredentialFields from '@/components/credentials/CredentialFields';
+import StudentCredential from '@/components/credentials/StudentCredential';
+import { emptyPhotos, type Photos } from '@/components/credentials/images';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import {
@@ -64,6 +68,12 @@ const navItems: { id: Tab; label: string; icon: typeof Home }[] = [
 ];
 
 function App() {
+  const [enrollment, setEnrollment] = useState<{ email: string; photos: Photos } | null>(null);
+  const forgetPhotos = useCallback(() => setEnrollment(null), []);
+  function startEnrollment(email: string, photos: Photos) {
+    setEnrollment({ email: email.trim().toLowerCase(), photos });
+    setActiveTab('profile');
+  }
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -99,6 +109,10 @@ function App() {
     const { data } = await supabase.from('profiles').select('id, full_name, student_number, career, email, role, student_verified').eq('id', userId).maybeSingle();
     if (data) setProfile(data as Profile);
   }, []);
+
+  const refreshCredentialProfile = useCallback(() => {
+    if (user) void loadProfile(user.id);
+  }, [user, loadProfile]);
 
   useEffect(() => {
     if (!profile) {
@@ -217,6 +231,7 @@ function App() {
   }
 
   async function signOut(): Promise<void> {
+    forgetPhotos();
     await supabase.auth.signOut();
     setProfile(null);
   }
@@ -224,7 +239,7 @@ function App() {
   const trackingMatch = window.location.pathname.match(/^\/seguimiento\/([A-Za-z0-9_-]+)\/?$/);
   if (trackingMatch) return <CompanionTrackingPage token={trackingMatch[1]} />;
   if (authLoading) return <div className="auth-loading">Cargando StudentGo...</div>;
-  if (!user) return <AuthScreen error={authError} onError={setAuthError} />;
+  if (!user) return <AuthScreen onEnroll={startEnrollment} onCancel={forgetPhotos} error={authError} onError={setAuthError} />;
 
   if (!profile) return <div className="auth-loading">Cargando perfil seguro...</div>;
   if (profile.role === 'ADMIN') return <><PasskeyOnboarding key={user.id} userId={user.id} /><AdminDashboard profile={{ id: profile.id, full_name: profile.full_name, email: profile.email }} onSignOut={() => { void signOut(); }} /></>;
@@ -280,6 +295,9 @@ function App() {
         {activeTab === 'history' && <HistoryView userId={user.id} isDriver={profile.role === 'DRIVER'} />}
         {activeTab === 'safety' && <SafetyView user={user} />}
         {activeTab === 'alerts' && <NotificationsView user={user} onChanged={() => { void loadUnread(user.id); }} onOpen={(target) => setActiveTab(target === 'trips' ? 'requests' : 'safety')} />}
+        {activeTab === 'profile' && <StudentCredential key={user.id} userId={user.id} verified={profile.student_verified}
+          initial={enrollment && enrollment.email === user.email?.toLowerCase() ? enrollment.photos : undefined}
+          onSent={forgetPhotos} onApproved={refreshCredentialProfile} />}
         {activeTab === 'profile' && <ProfileView profile={profile} initials={initials} isApprovedDriver={isApprovedDriver} driverStatus={driverApplicationStatus?.status ?? null} onDriver={openDriverAction} onSignOut={signOut} />}
         {activeTab === 'admin' && profile?.role === 'ADMIN' && <AdminView />}
 
@@ -463,7 +481,10 @@ function MobileDrawer({ active, isAdmin, onClose, onSelect, onDriver }: { active
 type SignupDraft = { name: string; lastName: string; matricula: string; career: string; group: string; phone: string; email: string; password: string; };
 type SignupEmergencyContact = { name: string; relationship: string; phone: string; whatsappConsent: boolean };
 
-function AuthScreen({ error, onError }: { error: string; onError: (message: string) => void }) {
+function AuthScreen({ error, onError, onEnroll, onCancel }: {
+  onEnroll: (email: string, photos: Photos) => void; onCancel: () => void; error: string; onError: (message: string) => void }) {
+  const online = useOnline();
+  const [photos, setPhotos] = useState<Photos>(emptyPhotos);
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState(''); const [showPassword, setShowPassword] = useState(false);
   const [draft, setDraft] = useState<SignupDraft>({ name: '', lastName: '', matricula: '', career: '', group: '', phone: '', email: '', password: '' });
@@ -482,16 +503,22 @@ function AuthScreen({ error, onError }: { error: string; onError: (message: stri
     finally { setBusy(false); }
   }
   async function signUp(): Promise<void> {
-    if (busy) return;
+    if (busy || !navigator.onLine) return;
     const fullName = `${draft.name} ${draft.lastName}`.trim(); const phonesValid = contacts.every((contact) => /^\+[1-9][0-9]{9,14}$/.test(contact.phone.replace(/[\s()-]/g, '')));
     if (!fullName || !draft.matricula.trim() || !draft.email.trim() || !passwordStrong || password !== confirmPassword || !phonesValid || contacts.some((contact) => !contact.name.trim() || !contact.relationship.trim() || !contact.whatsappConsent) || !consent) { onError('Completa tus datos, los dos contactos con autorización de WhatsApp y una contraseña segura que coincida.'); return; }
+    if (!photos.front || !photos.back || !photos.consent) {
+      onError('Adjunta ambos lados de tu credencial y acepta la revisión.'); return;
+    }
     setBusy(true); onError('');
+    onEnroll(draft.email, photos);
     try {
       const result = await supabase.auth.signUp({ email: draft.email.trim(), password, options: { data: { full_name: fullName, student_number: draft.matricula.trim(), career: draft.career.trim() || null, whatsapp_alerts_consent: true, emergency_contacts: contacts.map((contact) => ({ name: contact.name.trim(), relationship: contact.relationship.trim(), phone: contact.phone.replace(/[\s()-]/g, ''), whatsapp_consent: true })) } } });
-      if (result.error) onError('No pudimos crear tu cuenta. Revisa los datos e intenta otra vez.');
-      else onError('Cuenta creada. Confirma tu correo si se solicita e inicia sesión para activar el acceso con huella, rostro o PIN.');
-    } catch { onError('No pudimos conectar. Revisa tu conexión e intenta otra vez.'); }
-    finally { setBusy(false); }
+      if (result.error) { onCancel(); onError('No pudimos crear tu cuenta. Revisa tus datos.'); }
+      else if (!result.data.session) onError('Revisa tu correo para confirmar la cuenta. Después entra a Perfil → Mi credencial para completar el envío. Si cambias de ventana, selecciona las fotos nuevamente.');
+    } catch {
+      onCancel();
+      onError('No pudimos conectar. Revisa tu conexión e intenta otra vez.');
+    } finally { setBusy(false); }
   }
   return <div className={`auth-screen ${mode === 'signup' ? 'signup-screen' : ''}`}><div className="auth-art"><Brand /><div className="auth-car"><Car size={86} /><div className="auth-route"><MapPin size={19} /><span /><MapPin size={19} /></div></div><h1>Comparte tu camino,<br /><em>llega más lejos.</em></h1><p>Movilidad universitaria hecha para compartir el camino.</p></div>
     <form className={`auth-card ${mode === 'signup' ? 'signup-auth-card' : ''}`} onSubmit={(event) => { event.preventDefault(); if (mode === 'login') void signIn(); else void signUp(); }}><p className="eyebrow">STUDENTGO</p><h2>{mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}</h2><p className="auth-lead">{mode === 'login' ? 'Vuelve a tu comunidad universitaria.' : 'Registra tus datos y tus dos contactos de confianza.'}</p>{error && <div className="auth-error">{error}</div>}
@@ -506,12 +533,14 @@ function AuthScreen({ error, onError }: { error: string; onError: (message: stri
           <label>Teléfono<input type="tel" value={draft.phone} onChange={(event) => setDraft({ ...draft, phone: event.target.value })} placeholder="Ej. 2211234567" required /></label>
           <label className="signup-full-field">Correo institucional<input type="email" value={draft.email} onChange={(event) => setDraft({ ...draft, email: event.target.value })} placeholder="2311081469@alumno.utpuebla.edu.mx" required /></label>
         </div>
+        {!online && <p role="status">{offlineNotice}</p>}
+        <CredentialFields value={photos} onChange={setPhotos} />
         <fieldset className="signup-emergency-contacts"><legend>Dos contactos de emergencia para WhatsApp</legend><p>Registra personas que ya aceptaron recibir avisos de seguridad. Usa el número con lada internacional.</p><div className="signup-contacts-grid">{contacts.map((contact, index) => <div className="signup-emergency-contact" key={index}><strong>Contacto {index + 1}</strong><label>Nombre completo<input value={contact.name} onChange={(event) => updateContact(index, { name: event.target.value })} placeholder="Nombre completo" required /></label><label>Parentesco o relación<input value={contact.relationship} onChange={(event) => updateContact(index, { relationship: event.target.value })} placeholder="Ej. Mamá" required /></label><label className="contact-phone-field">Celular con lada<input type="tel" value={contact.phone} onChange={(event) => updateContact(index, { phone: event.target.value })} placeholder="+52 222 123 4567" required /></label><label className="consent-line"><input type="checkbox" checked={contact.whatsappConsent} onChange={(event) => updateContact(index, { whatsappConsent: event.target.checked })} required /> Confirmo que esta persona aceptó recibir avisos por WhatsApp.</label></div>)}</div></fieldset>
         <div className="signup-details-grid password-grid"><label>Contraseña<div className="password-input"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><ul className="password-rules">{passwordRules.map(([label, met]) => <li className={met ? 'valid' : ''} key={label}>{met ? '✓' : '×'} {label}</li>)}</ul></label><label>Confirmar contraseña<input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite tu contraseña" required minLength={8} />{confirmPassword && password !== confirmPassword && <span className="field-error">Las contraseñas no coinciden.</span>}</label></div>
         <label className="consent-line location-consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} required /> Acepto que StudentGo solicite mi ubicación únicamente si activo Acompañamiento Inteligente.</label>
       </>}
       {mode === 'login' && <><PasskeySignIn disabled={busy} onBusyChange={setBusy} onError={onError} /><label>Correo de alumno<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="2311081469@alumno.utpuebla.edu.mx" required /></label><label>Contraseña<div className="password-input"><input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña" required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label></>}
-      <button className="primary-button wide" type="submit" disabled={busy}>{busy ? 'Procesando...' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}</button><button type="button" className="auth-switch" disabled={busy} onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); onError(''); }}>{mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}</button>
+      <button className="primary-button wide" type="submit" disabled={busy || (mode === 'signup' && !online)}>{busy ? 'Procesando...' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}</button><button type="button" className="auth-switch" disabled={busy} onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); onError(''); }}>{mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}</button>
     </form></div>;
 }
 

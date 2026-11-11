@@ -5,10 +5,11 @@ import {
   ShieldCheck, Siren, Users, X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import CredentialReviews from '@/components/credentials/CredentialReviews';
 import SosIncidentDetail from '@/components/SosIncidentDetail';
 import PasskeySettings from '@/components/PasskeySettings';
 
-type AdminSection = 'overview' | 'applications' | 'students' | 'trips' | 'sos' | 'notices' | 'settings';
+type AdminSection = 'credentials' | 'overview' | 'applications' | 'students' | 'trips' | 'sos' | 'notices' | 'settings';
 type AdminProfile = { id: string; full_name: string; email: string };
 type StudentRow = { id: string; full_name: string; email: string; student_number: string; role: string; student_verified: boolean; driver_verified: boolean; updated_at: string };
 type ApplicationRow = { id: string; user_id: string; status: string; submitted_at: string | null; approved_at: string | null; approved_by: string | null; reviewed_at: string | null; reviewed_by: string | null; rejection_reason: string | null; applicant: { full_name: string; email: string; student_number: string | null } | null; reviewer: { full_name: string } | null; vehicle: { id: string; brand: string; model: string; plates: string; vehicle_year: number; color: string; license_path: string; registration_card_path: string } | null };
@@ -21,6 +22,7 @@ type NavItem = { id: AdminSection; label: string; icon: typeof LayoutDashboard }
 const navItems: NavItem[] = [
   { id: 'overview', label: 'Panel general', icon: LayoutDashboard },
   { id: 'applications', label: 'Solicitudes', icon: ClipboardCheck },
+  { id: 'credentials', label: 'Credenciales', icon: FileCheck2 },
   { id: 'students', label: 'Estudiantes', icon: GraduationCap },
   { id: 'trips', label: 'Viajes', icon: Route },
   { id: 'sos', label: 'Incidentes SOS', icon: Siren },
@@ -165,6 +167,7 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
       {loading ? <div className="admin-loading"><RefreshCw size={22} /> Cargando información segura...</div> : <>
         {section === 'overview' && <Overview stats={stats} profiles={communityProfiles} sosAlerts={sosAlerts} onNavigate={setSection} />}
         {section === 'applications' && <Applications applications={filteredApplications} counts={applicationCounts} activeTab={applicationTab} search={applicationSearch} onTabChange={setApplicationTab} onSearch={setApplicationSearch} onOpen={openDocuments} />}
+        {section === 'credentials' && <CredentialReviews onChange={() => void loadDashboard()} />}
         {section === 'students' && <Students students={filteredStudents} search={search} onSearch={setSearch} />}
         {section === 'trips' && <Trips trips={trips} />}
         {section === 'sos' && <SosAlerts alerts={sosAlerts} />}
