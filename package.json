@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:pruebas": "node scripts/verify-test-supabase.mjs && vite --mode pruebas",
-    "build": "vite build",
-    "build:pruebas": "node scripts/verify-test-supabase.mjs && vite build --mode pruebas",
+    "build": "vite build --manifest && node scripts/preparar-offline.mjs",
+    "build:pruebas": "node scripts/verify-test-supabase.mjs && vite build --mode pruebas --manifest && node scripts/preparar-offline.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "preview": "vite preview",
