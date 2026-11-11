@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:pruebas": "node scripts/verify-test-supabase.mjs && vite --mode pruebas",
+    "dev": "vite --port 5173 --strictPort",
+    "dev:pruebas": "node scripts/verify-test-supabase.mjs && vite --mode pruebas --port 5173 --strictPort",
+    "check:passkeys": "node scripts/verify-test-supabase.mjs && node scripts/check-passkeys.mjs",
     "build": "vite build",
     "build:pruebas": "node scripts/verify-test-supabase.mjs && vite build --mode pruebas",
     "lint": "eslint .",
@@ -13,8 +14,12 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
+    "@simplewebauthn/browser": "14.0.0",
+    "@supabase/supabase-js": "2.119.0",
     "@types/leaflet": "^1.9.22",
     "jsqr": "^1.4.0",
     "leaflet": "^1.9.4",
