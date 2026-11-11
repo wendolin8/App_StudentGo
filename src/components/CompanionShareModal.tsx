@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { UserPlus, X } from 'lucide-react';
+import { Copy, MessageCircle, UserPlus, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { createCompanion, setCompanionshipPreference, type CompanionInput } from '@/lib/companions';
 import { getCurrentPosition } from '@/lib/maps';
 
 type Option = 'contacts' | 'person' | 'both' | 'none';
 type ContactRow = { name: string; relationship: string; phone: string; whatsapp_consent_at: string | null };
-type CreatedLink = { label: string; status: string; detail: string };
+type CreatedLink = {
+  label: string;
+  status: string;
+  detail: string;
+  link?: string;
+  phone?: string;
+  companionId?: string;
+};
 
 const OPTIONS: { value: Option; label: string }[] = [
   { value: 'contacts', label: 'Mis contactos de emergencia' },
@@ -25,6 +32,7 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [links, setLinks] = useState<CreatedLink[]>([]);
+  const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -80,7 +88,14 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
     if (wantsPerson) inputs.push({ label: form.name.trim(), input: { name: form.name.trim(), relationship: form.relationship.trim(), phone: form.phone.replace(/[\s()-]/g, ''), source: 'COMPANION', locationConsent: consent, whatsappConsent: recipientConsent } });
 
     const created: CreatedLink[] = [];
+    const seenPhones = new Set<string>();
     for (const item of inputs) {
+      const normalizedPhone = item.input.phone.replace(/\D/g, '');
+      if (seenPhones.has(normalizedPhone)) {
+        created.push({ label: item.label, status: 'DUPLICADO', detail: 'Este número ya fue incluido para este viaje.' });
+        continue;
+      }
+      seenPhones.add(normalizedPhone);
       const outcome = await createCompanion(tripRequestId, item.input);
       if (!outcome.ok) { created.push({ label: item.label, status: 'NO_CREADO', detail: outcome.message }); continue; }
       const { data: locationSaved, error: locationError } = await supabase.rpc('record_companion_location', {
@@ -89,26 +104,53 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
         p_longitude: initialPosition.lng,
       });
       if (locationError || locationSaved !== true) {
-        created.push({ label: item.label, status: 'GPS_PENDIENTE', detail: 'El enlace se creó, pero no se solicitó WhatsApp porque no se pudo guardar la ubicación inicial.' });
-        setError('No se pudo guardar la ubicación inicial. No se notificó a esta persona.');
+        created.push({
+          label: item.label,
+          status: 'GPS_PENDIENTE',
+          detail: 'El enlace se creó, pero no se pudo guardar la ubicación inicial.',
+          link: outcome.link,
+          phone: item.input.phone,
+          companionId: outcome.companionId,
+        });
         continue;
       }
-      const { data: sendData, error: sendError } = await supabase.functions.invoke('whatsapp-send', { body: { action: 'SHARE_LINK', companionId: outcome.companionId, token: outcome.token } });
-      if (sendError || !sendData?.ok) {
-        const responseStatus = sendError && typeof sendError === 'object' && 'context' in sendError
-          ? (sendError as { context?: { status?: number } }).context?.status : undefined;
-        const queued = sendData?.status === 'REQUESTED' || responseStatus === 503;
-        created.push({ label: item.label, status: queued ? 'REQUESTED' : 'FAILED', detail: queued
-          ? 'Enlace privado creado y solicitud en cola. Meta no está configurado; no se envió ningún WhatsApp.'
-          : 'El enlace se creó, pero Meta rechazó o no confirmó la solicitud.' });
-        if (!queued) setError(sendData?.message ?? 'No se pudo solicitar el envío por WhatsApp. No se notificó a esta persona.');
-        continue;
-      }
-      created.push({ label: item.label, status: sendData.status, detail: sendData.status === 'ACCEPTED' ? 'Meta aceptó el mensaje; falta la confirmación de entrega.' : 'La solicitud quedó registrada; revisa el estado en Notificaciones.' });
+      created.push({
+        label: item.label,
+        status: 'LISTO_PARA_COMPARTIR',
+        detail: 'Enlace privado creado. Compártelo manualmente solo con esta persona autorizada.',
+        link: outcome.link,
+        phone: item.input.phone,
+        companionId: outcome.companionId,
+      });
     }
     setBusy(false);
     setLinks(created);
     if (created.length) onCreated();
+  }
+
+  function linkKey(item: CreatedLink) {
+    return item.companionId ?? item.link ?? `${item.label}-${item.phone ?? ''}`;
+  }
+
+  async function copySecureLink(item: CreatedLink) {
+    if (!item.link) return;
+    try {
+      await navigator.clipboard.writeText(item.link);
+      setCopiedLinkId(linkKey(item));
+    } catch {
+      setError('No pudimos copiar el enlace. Puedes seleccionarlo y copiarlo manualmente.');
+    }
+  }
+
+  function shareByWhatsApp(item: CreatedLink) {
+    if (!item.link || !item.phone) return;
+    const phone = item.phone.replace(/\D/g, '');
+    if (!phone) {
+      setError('No encontramos un número válido para abrir WhatsApp.');
+      return;
+    }
+    const message = `Hola ${item.label}. Te comparto un enlace privado y temporal de StudentGo para acompañar mi recorrido: ${item.link}`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   }
 
   const modal = <div className="modal-backdrop companion-modal-backdrop" role="presentation" onMouseDown={onClose}><div className="modal-card companion-modal" role="dialog" aria-modal="true" aria-labelledby="companion-modal-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -135,14 +177,21 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
       </div>}
 
       <label className="form-label"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> Autorizo compartir mi ubicación durante este recorrido con las personas seleccionadas.</label>
-      <p className="scanner-status">El envío utiliza exclusivamente plantillas aprobadas de WhatsApp Business. La pantalla mostrará el estado que confirme Meta.</p>
+      <p className="scanner-status">El enlace se creará solo con tu consentimiento. Después podrás copiarlo o abrir WhatsApp para compartirlo manualmente.</p>
       {error && <div className="auth-error">{error}</div>}
       <div className="companion-modal-actions"><button className="secondary-button" disabled={busy} onClick={() => { void saveNowNot(); }}>Ahora no</button><button className="primary-button" disabled={busy || option === 'none' || !consent || (contacts === null && wantsContacts)} onClick={() => { void submit(); }}><UserPlus size={17} /> {busy ? 'Guardando...' : 'Guardar acompañamiento'}</button></div>
     </> : <>
-      <p className="modal-lead">Estado confirmado por la integración de WhatsApp Business:</p>
-      {links.map((item, index) => <div className="contact-item" key={`${item.label}-${index}`}>
-        <div><strong>{item.label}</strong><span>{item.status}: {item.detail}</span></div>
+      <p className="modal-lead">Enlaces privados listos para compartir manualmente.</p>
+      <p className="scanner-status">No se enviaron mensajes automáticamente. Revisa el mensaje antes de enviarlo por WhatsApp.</p>
+      {links.map((item, index) => <div className="contact-item companion-created-link" key={linkKey(item) || `${item.label}-${index}`}>
+        <div><strong>{item.label}</strong><span>{item.status}: {item.detail}</span>
+          {item.link && <><code className="companion-link-preview">{item.link}</code><div className="companion-link-actions">
+            <button type="button" className="secondary-button" onClick={() => { void copySecureLink(item); }}><Copy size={15} /> {copiedLinkId === linkKey(item) ? 'Enlace copiado' : 'Copiar enlace seguro'}</button>
+            {item.phone && <button type="button" className="primary-button" onClick={() => shareByWhatsApp(item)}><MessageCircle size={15} /> Compartir por WhatsApp</button>}
+          </div></>}
+        </div>
       </div>)}
+      {error && <div className="auth-error">{error}</div>}
       <button className="secondary-button wide" onClick={onClose}>Listo</button>
     </>}
   </div></div>;
