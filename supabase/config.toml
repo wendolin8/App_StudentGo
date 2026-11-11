@@ -433,3 +433,6 @@ verify_jwt = false
 [functions.calculate-fare]
 verify_jwt = false
 
+[functions.request-trip]
+verify_jwt = false
+

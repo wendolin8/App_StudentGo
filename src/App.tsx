@@ -16,7 +16,7 @@ import EmergencyContactsEditor from '@/components/EmergencyContactsEditor';
 import DropoffPicker from '@/components/DropoffPicker';
 import { type LatLng, type PlaceResult, type RouteInfo, createMap, addMarker, drawRoute, fitToRoute, searchPlace, getRoute, getCurrentPosition, haversineKm } from '@/lib/maps';
 import { calculateFormulaFare, type FareConfig } from '@/lib/fares';
-import { calculateTripFare, type FareCalculation } from '@/lib/faresClient';
+import { calculateTripFare, submitFareQuote, type FareCalculation } from '@/lib/faresClient';
 
 type Tab = 'home' | 'requests' | 'history' | 'safety' | 'alerts' | 'profile' | 'admin';
 type TripStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED' | 'COMPLETED';
@@ -206,10 +206,10 @@ function App() {
     setRequestsRefreshVersion((current) => current + 1);
   }
 
-  async function requestTrip(tripId: string, dropoff: PlaceResult): Promise<boolean> {
+  async function requestTrip(tripId: string, quoteToken: string): Promise<boolean> {
     if (!user) return false;
     try {
-      const result = await calculateTripFare(tripId, dropoff, true);
+      const result = await submitFareQuote(quoteToken);
       if (!result.request_id) throw new Error('La solicitud no fue confirmada por el servidor.');
     } catch {
       return false;
@@ -291,7 +291,7 @@ function App() {
       </main>
 
       {showMenu && <MobileDrawer active={activeTab} isAdmin={profile?.role === 'ADMIN'} onClose={() => setShowMenu(false)} onSelect={(tab) => { setActiveTab(tab); setShowMenu(false); }} onDriver={() => { openDriverAction(); setShowMenu(false); }} />}
-      {selectedTrip && <TripModal trip={selectedTrip} status={requestStatuses[selectedTrip.id]} onClose={() => setSelectedTrip(null)} onRequest={(dropoff) => requestTrip(selectedTrip.id, dropoff)} />}
+      {selectedTrip && <TripModal trip={selectedTrip} status={requestStatuses[selectedTrip.id]} onClose={() => setSelectedTrip(null)} onRequest={(quoteToken) => requestTrip(selectedTrip.id, quoteToken)} />}
       {showDriverFlow && <DriverModal onClose={() => setShowDriverFlow(false)} onSubmit={(draft) => { void registerDriver(draft); }} status={driverApplicationStatus} />}
       {showPublishFlow && <PublishTripModal vehicles={approvedVehicles} onClose={() => setShowPublishFlow(false)} onPublish={(draft, vehicleId, route) => { void publishTrip(draft, vehicleId, route); }} />}
     </div>
@@ -400,14 +400,14 @@ function estimateFareOffline(trip: Trip, dropoff: PlaceResult, route: RouteInfo 
   const formula = calculateFormulaFare({ passengerKm, passengerMin, tripKm, config: LOCAL_FARE_CONFIG });
   return {
     fare: formula.total,
-    source: 'formula',
-    request_id: null,
+    fare_source: 'formula',
+    quote_token: null,
     explanation: 'Estimación local aproximada. El servidor recalculará la ruta y la tarifa al enviar la solicitud.',
     breakdown: { formula_total: formula.total, adjustment_pct: 0, components: formula, final_total: formula.total },
   };
 }
 
-function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: TripStatus; onClose: () => void; onRequest: (dropoff: PlaceResult) => Promise<boolean> }) {
+function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: TripStatus; onClose: () => void; onRequest: (quoteToken: string) => Promise<boolean> }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dropoff, setDropoff] = useState<PlaceResult | null>(null);
   const [quote, setQuote] = useState<FareCalculation | null>(null);
@@ -444,10 +444,27 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
   }
 
   async function sendRequest(): Promise<void> {
-    if (!dropoff) return;
+    if (!dropoff || !quote) return;
     setSubmitting(true);
     setMessage('');
-    const sent = await onRequest(dropoff);
+    let confirmedQuote = quote;
+    if (!confirmedQuote.quote_token) {
+      try {
+        confirmedQuote = await calculateTripFare(trip.id, dropoff);
+        setQuote(confirmedQuote);
+        setIsEstimated(false);
+      } catch {
+        setMessage('Conéctate para obtener una cotización firmada antes de enviar la solicitud.');
+        setSubmitting(false);
+        return;
+      }
+      if (confirmedQuote.fare !== quote.fare) {
+        setMessage('La tarifa confirmada por el servidor es distinta a la estimación. Revísala y vuelve a solicitar.');
+        setSubmitting(false);
+        return;
+      }
+    }
+    const sent = confirmedQuote.quote_token ? await onRequest(confirmedQuote.quote_token) : false;
     if (!sent) {
       setMessage('No se pudo enviar la solicitud. Revisa tu conexión e inténtalo de nuevo.');
       setSubmitting(false);
@@ -463,7 +480,7 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
         <DropoffPicker origin={trip.origin} destination={trip.destination} onSelected={(place, route) => { void selectDropoff(place, route); }} />
         {loadingQuote && <p className="scanner-status">Calculando tu tarifa...</p>}
         {quote && <div className="fare-card"><p className="eyebrow">TARIFA INDIVIDUAL {isEstimated ? 'ESTIMADA' : 'PARA TU TRAMO'}</p><strong>${quote.fare.toFixed(2)} MXN</strong>
-          <span>{isEstimated ? 'Fórmula local aproximada' : quote.source === 'ai' ? 'Fórmula base con ajuste de Gemini' : 'Calculada con la fórmula base'}</span>
+          <span>{isEstimated ? 'Fórmula local aproximada' : quote.fare_source === 'ai' ? 'Fórmula base con ajuste de Gemini' : 'Calculada con la fórmula base'}</span>
           <div className="fare-breakdown"><div><span>Base proporcional</span><strong>${quote.breakdown.components.base.toFixed(2)}</strong></div><div><span>Distancia</span><strong>${quote.breakdown.components.distance.toFixed(2)}</strong></div><div><span>Tiempo</span><strong>${quote.breakdown.components.time.toFixed(2)}</strong></div><div><span>Gasolina</span><strong>${quote.breakdown.components.gasoline.toFixed(2)}</strong></div>{quote.breakdown.adjustment_pct !== 0 && <div><span>Ajuste IA ({quote.breakdown.adjustment_pct}%)</span><strong>${(quote.fare - quote.breakdown.formula_total).toFixed(2)}</strong></div>}</div>
           <p className="fare-explanation">{quote.explanation}</p>
         </div>}

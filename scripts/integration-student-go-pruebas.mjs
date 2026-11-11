@@ -214,9 +214,12 @@ const { data: foundTrip, error: searchError } = await passenger.client.from('tri
 if (searchError || foundTrip.status !== 'PUBLISHED') throw new Error(`Búsqueda de pasajero falló: ${searchError?.message ?? 'viaje no visible'}`);
 assert(true, 'conductor publica viaje por RPC y pasajero lo encuentra por RLS');
 
-const { data: submittedRequest, error: requestError } = await passenger.client.functions.invoke('calculate-fare', {
-  body: { trip_id: tripId, dropoff_text: `DESTINO FICTICIO DE PRUEBA ${tripRunId}`, dropoff_lat: 19.0730, dropoff_lng: -98.2027, submit: true },
+const { data: quote, error: quoteError } = await passenger.client.functions.invoke('calculate-fare', {
+  body: { trip_id: tripId, dropoff_text: `DESTINO FICTICIO DE PRUEBA ${tripRunId}`, dropoff_lat: 19.0730, dropoff_lng: -98.2027 },
 });
+const { data: submittedRequest, error: requestError } = quote?.quote_token
+  ? await passenger.client.functions.invoke('request-trip', { body: { quote_token: quote.quote_token } })
+  : { data: null, error: quoteError };
 const { data: requestRow, error: requestRowError } = submittedRequest?.request_id
   ? await passenger.client.from('trip_requests').select('id, status').eq('id', submittedRequest.request_id).single()
   : { data: null, error: requestError };

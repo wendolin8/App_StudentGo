@@ -5,6 +5,7 @@ import {
   parseGeminiAdjustment,
   type FareConfig,
 } from '../_shared/fares.ts';
+import { createSignedFareQuote } from '../_shared/fare-quotes.ts';
 
 type Coordinates = { lat: number; lng: number };
 type RouteInfo = { distanceKm: number; durationMin: number };
@@ -13,7 +14,6 @@ type FareRequest = {
   dropoff_text?: unknown;
   dropoff_lat?: unknown;
   dropoff_lng?: unknown;
-  submit?: unknown;
 };
 
 type TripRow = {
@@ -28,7 +28,7 @@ type TripRow = {
   status: string;
 };
 
-const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 const MAX_ROUTE_RATIO = 1.2;
 const ROUTE_EXTRA_ALLOWANCE_KM = 2;
 
@@ -85,7 +85,6 @@ async function requestGeminiAdjustment(input: {
         parts: [{ text: JSON.stringify(input) }],
       }],
       generationConfig: {
-        temperature: 0.2,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',
@@ -99,7 +98,10 @@ async function requestGeminiAdjustment(input: {
       },
     }),
   });
-  if (!response.ok) return null;
+  if (!response.ok) {
+    console.error('calculate-fare: Gemini respondió HTTP', response.status);
+    return null;
+  }
 
   const body = await response.json() as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -140,8 +142,13 @@ Deno.serve(async (request: Request) => {
   };
   if (typeof input.trip_id !== 'string' || !/^[0-9a-f-]{36}$/i.test(input.trip_id)
     || typeof input.dropoff_text !== 'string' || !input.dropoff_text.trim() || input.dropoff_text.length > 300
-    || !isCoordinates(dropoff) || (input.submit !== undefined && typeof input.submit !== 'boolean')) {
+    || !isCoordinates(dropoff)) {
     return jsonResponse({ error: 'DATOS_DE_BAJADA_INVALIDOS' }, 400, origin);
+  }
+
+  const quoteSecret = Deno.env.get('FARE_QUOTE_SECRET');
+  if (!quoteSecret || new TextEncoder().encode(quoteSecret).byteLength < 32) {
+    return jsonResponse({ error: 'COTIZACION_NO_CONFIGURADA' }, 503, origin);
   }
 
   const db = serviceClient();
@@ -245,26 +252,27 @@ Deno.serve(async (request: Request) => {
     available_seats: tripRow.available_seats,
   };
 
-  let requestId: string | null = null;
-  if (input.submit === true) {
-    const { data, error } = await db.rpc('request_trip_with_dropoff', {
-      p_trip_id: tripRow.id,
-      p_passenger_id: user.id,
-      p_dropoff_text: input.dropoff_text.trim(),
-      p_dropoff_lat: dropoff.lat,
-      p_dropoff_lng: dropoff.lng,
-      p_passenger_distance_km: Number(passengerRoute.distanceKm.toFixed(2)),
-      p_passenger_minutes: Math.round(passengerRoute.durationMin),
-      p_fare: fare,
-      p_fare_source: source,
-      p_fare_breakdown: breakdown,
-    });
-    if (error) {
-      const duplicate = error.message.includes('SOLICITUD_DUPLICADA');
-      return jsonResponse({ error: duplicate ? 'SOLICITUD_DUPLICADA' : 'NO_SE_PUDO_CREAR_LA_SOLICITUD' }, duplicate ? 409 : 400, origin);
-    }
-    requestId = data as string;
-  }
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const quoteToken = await createSignedFareQuote({
+    user_id: user.id,
+    trip_id: tripRow.id,
+    dropoff_text: input.dropoff_text.trim(),
+    dropoff_lat: dropoff.lat,
+    dropoff_lng: dropoff.lng,
+    passenger_distance_km: Number(passengerRoute.distanceKm.toFixed(2)),
+    passenger_minutes: Math.round(passengerRoute.durationMin),
+    fare,
+    fare_source: source,
+    fare_breakdown: breakdown,
+    expires_at: expiresAt,
+  }, quoteSecret);
 
-  return jsonResponse({ fare, breakdown, source, explanation, request_id: requestId }, 200, origin);
+  return jsonResponse({
+    fare,
+    breakdown,
+    fare_source: source,
+    explanation,
+    quote_token: quoteToken,
+    expires_at: expiresAt,
+  }, 200, origin);
 });
