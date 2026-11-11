@@ -1,0 +1,48 @@
+.startup-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.startup-card {
+  width: 100%;
+  max-width: 640px;
+  padding: clamp(20px, 5vw, 36px);
+  border: 1px solid #e6e8f3;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 36px #48488c0d;
+  overflow-wrap: anywhere;
+}
+
+.startup-brand {
+  color: #6354ec;
+  font-weight: 700;
+}
+
+.startup-card h1 {
+  font-size: 24px;
+}
+
+.startup-card p,
+.startup-card li {
+  line-height: 1.6;
+}
+
+.startup-details {
+  margin: 24px 0;
+  padding: 18px;
+  border-radius: 12px;
+  background: #f7f8ff;
+  font-size: 14px;
+}
+
+.startup-details h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.startup-details ol {
+  padding-left: 20px;
+}

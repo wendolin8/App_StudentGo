@@ -32,10 +32,6 @@ export default function EmergencyContactsEditor({ userId }: { userId: string }) 
   function reset(): void { setDraft(emptyDraft); setEditingId(null); }
 
   async function updateAlertsConsent(enabled: boolean): Promise<void> {
-    if (enabled && (contacts.length !== 2 || contacts.some((contact) => !contact.whatsapp_consent_at))) {
-      setMessage('Primero registra exactamente dos contactos y confirma su autorización de WhatsApp.');
-      return;
-    }
     setConsentBusy(true);
     const { data, error } = await supabase.rpc('set_whatsapp_alert_consent', { p_enabled: enabled });
     setConsentBusy(false);
@@ -72,7 +68,7 @@ export default function EmergencyContactsEditor({ userId }: { userId: string }) 
   return <section className="sos-section">
     <p className="eyebrow"><Contact size={14} /> CONTACTOS DE EMERGENCIA</p>
     <p>Registra exactamente dos personas con celular internacional. Los avisos externos de seguridad de Student Go usan solo WhatsApp.</p>
-    <label className="form-label consent-line"><input type="checkbox" checked={alertsConsent} disabled={consentBusy} onChange={(event) => { void updateAlertsConsent(event.target.checked); }} /> Acepto que Student Go envíe alertas de seguridad por WhatsApp a estos contactos. La ubicación solo se comparte cuando activo el acompañamiento para un viaje.</label>
+    <label className="form-label consent-line"><input type="checkbox" checked={alertsConsent} disabled={consentBusy} onChange={(event) => { void updateAlertsConsent(event.target.checked); }} /> Autorizo a Student Go usar WhatsApp para los destinatarios que yo elija durante Acompañamiento Inteligente. Esto no activa ni modifica mis contactos de emergencia.</label>
     {loading ? <p className="scanner-status">Cargando contactos...</p> : contacts.map((contact) => <div className="contact-item" key={contact.id}>
       <div><strong>{contact.name}</strong><span>{contact.relationship} · WhatsApp · {contact.phone}</span></div>
       <div><button className="small-button" onClick={() => edit(contact)}>Editar</button></div>

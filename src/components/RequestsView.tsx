@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Camera, Car, Check, Clock3, Compass, MapPin, Plus, QrCode, ShieldCheck, UsersRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useRides } from '@/lib/useRides';
-import { REQUEST_LABEL, REQUEST_PILL, formatRideDate, isFinishedTrip, type DriverTripGroup, type PassengerRide, type RideTripStatus, type DriverRequest } from '@/lib/rides';
+import { REQUEST_LABEL, REQUEST_PILL, canOfferPassengerCompanionship, formatRideDate, isFinishedTrip, type DriverTripGroup, type PassengerRide, type RideTripStatus, type DriverRequest } from '@/lib/rides';
 import QrPassengerCard from '@/components/QrPassengerCard';
 import QrScannerModal from '@/components/QrScannerModal';
 import CompanionPanel from '@/components/CompanionPanel';
@@ -12,8 +12,9 @@ const TRIP_LABEL: Record<RideTripStatus, string> = { PUBLISHED: 'Publicado', FUL
 type RpcResult = { ok: boolean; reason: string };
 
 export default function RequestsView({ userId, isDriver, canPublish, onPublish, onOpenSafety }: { userId: string; isDriver: boolean; canPublish: boolean; onPublish: () => void; onOpenSafety: () => void }) {
-  const { rides, groups, loading, failed, reload } = useRides(userId, isDriver);
-  const [tab, setTab] = useState<'passenger' | 'driver'>('passenger');
+  const { rides, groups, loading, failed, errorMessage, reload } = useRides(userId, isDriver);
+  const [tab, setTab] = useState<'passenger' | 'driver'>(isDriver ? 'driver' : 'passenger');
+  useEffect(() => { setTab(isDriver ? 'driver' : 'passenger'); }, [isDriver]);
   const activeRides = rides.filter((ride) => !isFinishedTrip(ride.trip.status));
   const activeGroups = groups.filter((group) => !isFinishedTrip(group.trip.status));
 
@@ -23,12 +24,12 @@ export default function RequestsView({ userId, isDriver, canPublish, onPublish, 
       <button className={tab === 'passenger' ? 'selected' : ''} onClick={() => setTab('passenger')}>Como pasajero <span>{activeRides.length}</span></button>
       <button className={tab === 'driver' ? 'selected' : ''} onClick={() => setTab('driver')}>Como conductor <span>{activeGroups.length}</span></button>
     </div>}
-    {failed && <div className="sos-status">No pudimos cargar tus solicitudes. <button className="small-button" onClick={() => { void reload(); }}>Reintentar</button></div>}
+    {failed && <div className="sos-status">{errorMessage || 'No pudimos cargar tus solicitudes.'} <button className="small-button" onClick={() => { void reload(); }}>Reintentar</button></div>}
     {!failed && loading && <p className="scanner-status">Cargando solicitudes...</p>}
     {!failed && !loading && tab === 'passenger' && <PassengerRequests rides={activeRides} userId={userId} onOpenSafety={onOpenSafety} />}
     {!failed && !loading && tab === 'driver' && isDriver && <>
       {canPublish && <div className="trip-meta" style={{ marginBottom: 16 }}><button className="primary-button" onClick={onPublish}><Plus size={16} /> Publicar viaje</button></div>}
-      <DriverRequests groups={activeGroups} userId={userId} onChanged={() => { void reload(); }} onOpenSafety={onOpenSafety} />
+      <DriverRequests groups={activeGroups} onChanged={() => { void reload(); }} onOpenSafety={onOpenSafety} />
     </>}
   </div>;
 }
@@ -38,9 +39,11 @@ function PassengerRequests({ rides, userId, onOpenSafety }: { rides: PassengerRi
   if (!rides.length) return <div className="empty-panel"><div className="empty-icon"><Compass size={25} /></div><h3>No tienes solicitudes activas</h3><p>Busca un viaje en Inicio para solicitar un lugar.</p></div>;
   return <div className="trip-list">{rides.map(({ request, trip }) => {
     const started = trip.status === 'IN_PROGRESS';
+    const boarded = canOfferPassengerCompanionship(request);
     const accepted = request.status === 'ACCEPTED';
     const stateText = !accepted ? (request.status === 'PENDING' ? 'Esperando respuesta del conductor.' : 'Esta solicitud ya no está activa.')
-      : started ? 'Viaje en curso.' : trip.meetingPointReachedAt ? 'El conductor llegó al punto de encuentro.' : 'Por salir.';
+      : boarded ? 'Tu abordaje fue validado. Puedes configurar tu Acompañamiento Inteligente.'
+        : started ? 'Viaje en curso.' : trip.meetingPointReachedAt ? 'El conductor llegó al punto de encuentro.' : 'Por salir.';
     return <article className="trip-card" key={request.id}>
       <div className="trip-main"><div className="avatar trip-avatar" style={{ background: '#d9e6ff' }}><Car size={18} /></div><div className="trip-copy"><strong>Conductor verificado</strong><span>{trip.vehicle || 'Vehículo no disponible'}</span></div><div className="trip-price"><strong>${request.fare}</strong><span>MXN</span></div></div>
       <div className="trip-route"><div><span className="route-dot purple" />{trip.origin}</div><div className="route-connector" /><div><span className="route-dot dark" />{trip.destination}</div></div>
@@ -48,15 +51,15 @@ function PassengerRequests({ rides, userId, onOpenSafety }: { rides: PassengerRi
       <p className="scanner-status">{stateText}</p>
       {accepted && <div className="trip-meta">
         <button className="small-button" onClick={() => setOpenQrId(openQrId === request.id ? null : request.id)}><QrCode size={14} /> {openQrId === request.id ? 'Ocultar QR' : 'Ver QR de abordaje'}</button>
-        {started && <button className="small-button" onClick={onOpenSafety}>Centro de seguridad</button>}
+        {boarded && <button className="small-button" onClick={onOpenSafety}>Centro de seguridad</button>}
       </div>}
       {accepted && openQrId === request.id && <QrPassengerCard tripId={trip.id} started={started} />}
-      {accepted && started && <CompanionPanel tripId={trip.id} tripRequestId={request.id} userId={userId} />}
+      {accepted && boarded && <CompanionPanel tripId={trip.id} tripRequestId={request.id} userId={userId} tripLabel={`${trip.origin} → ${trip.destination}`} autoPrompt />}
     </article>;
   })}</div>;
 }
 
-function DriverRequests({ groups, userId, onChanged, onOpenSafety }: { groups: DriverTripGroup[]; userId: string; onChanged: () => void; onOpenSafety: () => void }) {
+function DriverRequests({ groups, onChanged, onOpenSafety }: { groups: DriverTripGroup[]; onChanged: () => void; onOpenSafety: () => void }) {
   const [message, setMessage] = useState('');
   const [showScanner, setShowScanner] = useState(false);
 
@@ -98,7 +101,6 @@ function DriverRequests({ groups, userId, onChanged, onOpenSafety }: { groups: D
           <button className="primary-button" onClick={() => { void runTripRpc('complete_ride', trip.id, 'Finalizando viaje...', 'Viaje finalizado. Gracias por compartir tu camino.'); }}><Check size={16} /> Finalizar viaje</button>
           <button className="small-button" onClick={onOpenSafety}><ShieldCheck size={14} /> Seguridad y SOS del viaje</button>
         </div>}
-        {started && accepted[0] && <CompanionPanel tripId={trip.id} tripRequestId={accepted[0].id} userId={userId} />}
       </article>;
     })}
     {showScanner && <QrScannerModal onClose={() => { setShowScanner(false); onChanged(); }} />}

@@ -17,6 +17,9 @@ import HistoryView from '@/components/HistoryView';
 import AdminDashboard from '@/components/AdminDashboard';
 import CompanionTrackingPage from '@/components/CompanionTrackingPage';
 import EmergencyContactsEditor from '@/components/EmergencyContactsEditor';
+import PasskeySignIn from '@/components/PasskeySignIn';
+import PasskeySettings from '@/components/PasskeySettings';
+import PasskeyOnboarding from '@/components/PasskeyOnboarding';
 import { type LatLng, type RouteInfo, createMap, addMarker, drawRoute, fitToRoute, searchPlace, getRoute, getCurrentPosition } from '@/lib/maps';
 
 type Tab = 'home' | 'requests' | 'history' | 'safety' | 'alerts' | 'profile' | 'admin';
@@ -79,6 +82,7 @@ function App() {
   const [persistedTrips, setPersistedTrips] = useState<Trip[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
   const [requestStatuses, setRequestStatuses] = useState<Record<string, TripStatus>>({});
+  const [requestsRefreshVersion, setRequestsRefreshVersion] = useState(0);
   const [showDriverFlow, setShowDriverFlow] = useState(false);
   const [showPublishFlow, setShowPublishFlow] = useState(false);
   const [approvedVehicles, setApprovedVehicles] = useState<Array<{ id: string; label: string; capacity: number }>>([]);
@@ -207,7 +211,13 @@ function App() {
     if (!user || !draft.origin || !draft.destination || !routeInfo) return;
     const { error } = await supabase.rpc('publish_trip_with_vehicle', { p_vehicle_id: vehicleId, p_origin_text: draft.originLabel, p_destination_text: draft.destinationLabel, p_origin_lat: draft.origin.lat, p_origin_lng: draft.origin.lng, p_destination_lat: draft.destination.lat, p_destination_lng: draft.destination.lng, p_departure_at: new Date(draft.departureAt).toISOString(), p_available_seats: draft.availableSeats, p_distance_km: routeInfo.distanceKm, p_estimated_minutes: Math.round(routeInfo.durationMin), p_suggested_fare: draft.fare, p_notes: null });
     if (error) { setAuthError('No pudimos publicar tu viaje. Verifica que tu vehículo siga aprobado.'); return; }
-    await loadTrips(); setShowPublishFlow(false);
+    // RequestsView owns the driver's published-trip query. Refresh that view
+    // immediately after the RPC succeeds instead of making the driver reload
+    // the browser or wait for its background synchronisation interval.
+    await Promise.all([loadTrips(), loadRequestStatuses()]);
+    setShowPublishFlow(false);
+    setActiveTab('requests');
+    setRequestsRefreshVersion((current) => current + 1);
   }
 
   async function requestTrip(tripId: string): Promise<void> {
@@ -232,13 +242,24 @@ function App() {
   if (!user) return <AuthScreen onEnroll={startEnrollment} onCancel={forgetPhotos} error={authError} onError={setAuthError} />;
 
   if (!profile) return <div className="auth-loading">Cargando perfil seguro...</div>;
-  if (profile.role === 'ADMIN') return <AdminDashboard profile={{ id: profile.id, full_name: profile.full_name, email: profile.email }} onSignOut={() => { void signOut(); }} />;
+  if (profile.role === 'ADMIN') return <><PasskeyOnboarding key={user.id} userId={user.id} /><AdminDashboard profile={{ id: profile.id, full_name: profile.full_name, email: profile.email }} onSignOut={() => { void signOut(); }} /></>;
 
   const initials = profile.full_name.split(' ').map((part) => part[0]).slice(0, 2).join('').toUpperCase() || 'AB';
   const visibleNavItems = navItems.filter((item) => item.id !== 'admin');
+  const isApprovedDriver = profile.role === 'DRIVER' && driverApplicationStatus?.status === 'APPROVED' && approvedVehicles.length > 0;
+  const openDriverAction = () => {
+    if (isApprovedDriver) setShowPublishFlow(true);
+    else setShowDriverFlow(true);
+  };
+  const driverPrompt = isApprovedDriver
+    ? { title: 'Ofrecer viaje', detail: 'Publica tu siguiente recorrido.' }
+    : driverApplicationStatus?.status === 'PENDING_REVIEW'
+      ? { title: 'Solicitud en revisión', detail: 'Consulta el estado de tu registro.' }
+      : { title: '¿Tienes auto?', detail: 'Conviértete en conductor' };
 
   return (
     <div className="app-shell">
+      <PasskeyOnboarding key={user.id} userId={user.id} />
       <aside className="sidebar">
         <Brand />
         <div className="sidebar-profile">
@@ -250,9 +271,9 @@ function App() {
           {visibleNavItems.map((item) => <NavButton key={item.id} item={item} active={activeTab === item.id} onClick={setActiveTab} badge={item.id === 'alerts' ? unreadCount : 0} />)}
         </nav>
         <div className="sidebar-bottom">
-          <button className="driver-prompt" onClick={() => setShowDriverFlow(true)}>
+          <button className="driver-prompt" onClick={openDriverAction}>
             <div className="driver-prompt-icon"><Car size={20} /></div>
-            <div><strong>¿Tienes auto?</strong><span>Conviértete en conductor</span></div>
+            <div><strong>{driverPrompt.title}</strong><span>{driverPrompt.detail}</span></div>
             <ChevronRight size={17} />
           </button>
           <button className="support-link"><MessageCircle size={17} /> Ayuda y soporte</button>
@@ -269,15 +290,15 @@ function App() {
           </div>
         </header>
 
-        {activeTab === 'home' && <HomeView searchFrom={searchFrom} searchTo={searchTo} setSearchFrom={setSearchFrom} setSearchTo={setSearchTo} trips={visibleTrips} statuses={requestStatuses} onSelectTrip={setSelectedTrip} onDriver={() => setShowDriverFlow(true)} onHistory={() => setActiveTab('history')} />}
-        {activeTab === 'requests' && <RequestsView userId={user.id} isDriver={profile.role === 'DRIVER'} canPublish={approvedVehicles.length > 0} onPublish={() => setShowPublishFlow(true)} onOpenSafety={() => setActiveTab('safety')} />}
+        {activeTab === 'home' && <HomeView searchFrom={searchFrom} searchTo={searchTo} setSearchFrom={setSearchFrom} setSearchTo={setSearchTo} trips={visibleTrips} statuses={requestStatuses} onSelectTrip={setSelectedTrip} onDriver={openDriverAction} onHistory={() => setActiveTab('history')} />}
+        {activeTab === 'requests' && <RequestsView key={requestsRefreshVersion} userId={user.id} isDriver={profile.role === 'DRIVER'} canPublish={isApprovedDriver} onPublish={() => setShowPublishFlow(true)} onOpenSafety={() => setActiveTab('safety')} />}
         {activeTab === 'history' && <HistoryView userId={user.id} isDriver={profile.role === 'DRIVER'} />}
         {activeTab === 'safety' && <SafetyView user={user} />}
         {activeTab === 'alerts' && <NotificationsView user={user} onChanged={() => { void loadUnread(user.id); }} onOpen={(target) => setActiveTab(target === 'trips' ? 'requests' : 'safety')} />}
         {activeTab === 'profile' && <StudentCredential key={user.id} userId={user.id} verified={profile.student_verified}
           initial={enrollment && enrollment.email === user.email?.toLowerCase() ? enrollment.photos : undefined}
           onSent={forgetPhotos} onApproved={refreshCredentialProfile} />}
-        {activeTab === 'profile' && <ProfileView profile={profile} initials={initials} onDriver={() => setShowDriverFlow(true)} onSignOut={signOut} />}
+        {activeTab === 'profile' && <ProfileView profile={profile} initials={initials} isApprovedDriver={isApprovedDriver} driverStatus={driverApplicationStatus?.status ?? null} onDriver={openDriverAction} onSignOut={signOut} />}
         {activeTab === 'admin' && profile?.role === 'ADMIN' && <AdminView />}
 
         <div className="mobile-nav">
@@ -285,7 +306,7 @@ function App() {
         </div>
       </main>
 
-      {showMenu && <MobileDrawer active={activeTab} isAdmin={profile?.role === 'ADMIN'} onClose={() => setShowMenu(false)} onSelect={(tab) => { setActiveTab(tab); setShowMenu(false); }} onDriver={() => { setShowDriverFlow(true); setShowMenu(false); }} />}
+      {showMenu && <MobileDrawer active={activeTab} isAdmin={profile?.role === 'ADMIN'} onClose={() => setShowMenu(false)} onSelect={(tab) => { setActiveTab(tab); setShowMenu(false); }} onDriver={() => { openDriverAction(); setShowMenu(false); }} />}
       {selectedTrip && <TripModal trip={selectedTrip} status={requestStatuses[selectedTrip.id]} user={user} onClose={() => setSelectedTrip(null)} onRequest={() => { void requestTrip(selectedTrip.id); }} />}
       {showDriverFlow && <DriverModal onClose={() => setShowDriverFlow(false)} onSubmit={(draft) => { void registerDriver(draft); }} status={driverApplicationStatus} />}
       {showPublishFlow && <PublishTripModal vehicles={approvedVehicles} onClose={() => setShowPublishFlow(false)} onPublish={(draft, vehicleId, route) => { void publishTrip(draft, vehicleId, route); }} />}
@@ -335,11 +356,12 @@ function TripCard({ trip, status, onSelect }: { trip: Trip; status?: TripStatus;
 }
 
 
-function ProfileView({ profile, initials, onDriver, onSignOut }: { profile: Profile | null; initials: string; onDriver: () => void; onSignOut: () => void }) {
+function ProfileView({ profile, initials, isApprovedDriver, driverStatus, onDriver, onSignOut }: { profile: Profile | null; initials: string; isApprovedDriver: boolean; driverStatus: DriverApplicationStatus['status'] | null; onDriver: () => void; onSignOut: () => void }) {
   return <div className="page-wrap profile-page">
     <div className="profile-hero card-surface"><div className="profile-avatar">{initials}</div><h1>{profile?.full_name ?? 'Estudiante'}</h1><p>{profile?.career ?? 'Perfil de estudiante'}</p><span className="student-id">Matrícula: {profile?.student_number ?? '—'}</span></div>
-    <button className="driver-banner" onClick={onDriver}><div className="quick-icon lavender"><Car size={22} /></div><div><strong>Conviértete en conductor</strong><span>Comparte tu auto y ayuda a otros estudiantes.</span></div><ChevronRight size={19} /></button>
+    <button className="driver-banner" onClick={onDriver}><div className="quick-icon lavender"><Car size={22} /></div><div><strong>{isApprovedDriver ? 'Conductor aprobado' : driverStatus === 'PENDING_REVIEW' ? 'Solicitud de conductor en revisión' : 'Conviértete en conductor'}</strong><span>{isApprovedDriver ? 'Publica tu próximo viaje desde aquí.' : driverStatus === 'PENDING_REVIEW' ? 'Tu registro está pendiente de revisión administrativa.' : 'Comparte tu auto y ayuda a otros estudiantes.'}</span></div><ChevronRight size={19} /></button>
     {profile && <EmergencyContactsEditor userId={profile.id} />}
+    {profile && <PasskeySettings key={profile.id} userId={profile.id} />}
     <button className="logout" onClick={() => { void onSignOut(); }}><span className="option-icon option-danger"><LogOut size={17} /></span>Cerrar sesión</button>
   </div>;
 }
@@ -471,24 +493,37 @@ function AuthScreen({ error, onError, onEnroll, onCancel }: {
   const passwordRules: Array<[string, boolean]> = [['8 caracteres o más', password.length >= 8], ['Una mayúscula', /[A-ZÁÉÍÓÚÑ]/.test(password)], ['Un número', /\d/.test(password)], ['Un símbolo', /[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]/.test(password)]];
   const passwordStrong = passwordRules.every(([, met]) => met);
   function updateContact(index: number, change: Partial<SignupEmergencyContact>): void { setContacts((current) => { const next: [SignupEmergencyContact, SignupEmergencyContact] = [...current]; next[index] = { ...next[index], ...change }; return next; }); }
-  async function signIn(): Promise<void> { setBusy(true); onError(''); const result = await supabase.auth.signInWithPassword({ email, password }); if (result.error) onError('No pudimos iniciar sesión. Revisa tu correo y contraseña.'); setBusy(false); }
+  async function signIn(): Promise<void> {
+    if (busy) return;
+    setBusy(true); onError('');
+    try {
+      const result = await supabase.auth.signInWithPassword({ email, password });
+      if (result.error) onError('No pudimos iniciar sesión. Revisa tu correo y contraseña.');
+    } catch { onError('No pudimos conectar. Revisa tu conexión e intenta otra vez.'); }
+    finally { setBusy(false); }
+  }
   async function signUp(): Promise<void> {
-    if (!navigator.onLine) return;
+    if (busy || !navigator.onLine) return;
     const fullName = `${draft.name} ${draft.lastName}`.trim(); const phonesValid = contacts.every((contact) => /^\+[1-9][0-9]{9,14}$/.test(contact.phone.replace(/[\s()-]/g, '')));
     if (!fullName || !draft.matricula.trim() || !draft.email.trim() || !passwordStrong || password !== confirmPassword || !phonesValid || contacts.some((contact) => !contact.name.trim() || !contact.relationship.trim() || !contact.whatsappConsent) || !consent) { onError('Completa tus datos, los dos contactos con autorización de WhatsApp y una contraseña segura que coincida.'); return; }
-    setBusy(true); onError('');
     if (!photos.front || !photos.back || !photos.consent) {
-      setBusy(false); onError('Adjunta ambos lados de tu credencial y acepta la revisión.'); return;
+      onError('Adjunta ambos lados de tu credencial y acepta la revisión.'); return;
     }
+    setBusy(true); onError('');
     onEnroll(draft.email, photos);
-    const result = await supabase.auth.signUp({ email: draft.email.trim(), password, options: { data: { full_name: fullName, student_number: draft.matricula.trim(), career: draft.career.trim() || null, whatsapp_alerts_consent: true, emergency_contacts: contacts.map((contact) => ({ name: contact.name.trim(), relationship: contact.relationship.trim(), phone: contact.phone.replace(/[\s()-]/g, ''), whatsapp_consent: true })) } } });
-    if (result.error) { onCancel(); onError('No pudimos crear tu cuenta. Revisa tus datos.'); }
-    else if (!result.data.session) onError('Revisa tu correo para confirmar la cuenta. Después entra a Perfil → Mi credencial para completar el envío. Si cambias de ventana, selecciona las fotos nuevamente.');
-    setBusy(false);
+    try {
+      const result = await supabase.auth.signUp({ email: draft.email.trim(), password, options: { data: { full_name: fullName, student_number: draft.matricula.trim(), career: draft.career.trim() || null, whatsapp_alerts_consent: true, emergency_contacts: contacts.map((contact) => ({ name: contact.name.trim(), relationship: contact.relationship.trim(), phone: contact.phone.replace(/[\s()-]/g, ''), whatsapp_consent: true })) } } });
+      if (result.error) { onCancel(); onError('No pudimos crear tu cuenta. Revisa tus datos.'); }
+      else if (!result.data.session) onError('Revisa tu correo para confirmar la cuenta. Después entra a Perfil → Mi credencial para completar el envío. Si cambias de ventana, selecciona las fotos nuevamente.');
+    } catch {
+      onCancel();
+      onError('No pudimos conectar. Revisa tu conexión e intenta otra vez.');
+    } finally { setBusy(false); }
   }
   return <div className={`auth-screen ${mode === 'signup' ? 'signup-screen' : ''}`}><div className="auth-art"><Brand /><div className="auth-car"><Car size={86} /><div className="auth-route"><MapPin size={19} /><span /><MapPin size={19} /></div></div><h1>Comparte tu camino,<br /><em>llega más lejos.</em></h1><p>Movilidad universitaria hecha para compartir el camino.</p></div>
     <form className={`auth-card ${mode === 'signup' ? 'signup-auth-card' : ''}`} onSubmit={(event) => { event.preventDefault(); if (mode === 'login') void signIn(); else void signUp(); }}><p className="eyebrow">STUDENTGO</p><h2>{mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}</h2><p className="auth-lead">{mode === 'login' ? 'Vuelve a tu comunidad universitaria.' : 'Registra tus datos y tus dos contactos de confianza.'}</p>{error && <div className="auth-error">{error}</div>}
       {mode === 'signup' && <>
+        <p className="passkey-help">Después de crear y confirmar tu cuenta podrás activar una clave de acceso para entrar con huella, rostro o PIN.</p>
         <div className="signup-details-grid">
           <label>Nombre<input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} placeholder="Ej. Arely" required /></label>
           <label>Apellidos<input value={draft.lastName} onChange={(event) => setDraft({ ...draft, lastName: event.target.value })} placeholder="Ej. Basurto Cruz" required /></label>
@@ -504,8 +539,8 @@ function AuthScreen({ error, onError, onEnroll, onCancel }: {
         <div className="signup-details-grid password-grid"><label>Contraseña<div className="password-input"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><ul className="password-rules">{passwordRules.map(([label, met]) => <li className={met ? 'valid' : ''} key={label}>{met ? '✓' : '×'} {label}</li>)}</ul></label><label>Confirmar contraseña<input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite tu contraseña" required minLength={8} />{confirmPassword && password !== confirmPassword && <span className="field-error">Las contraseñas no coinciden.</span>}</label></div>
         <label className="consent-line location-consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} required /> Acepto que StudentGo solicite mi ubicación únicamente si activo Acompañamiento Inteligente.</label>
       </>}
-      {mode === 'login' && <><label>Correo de alumno<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="2311081469@alumno.utpuebla.edu.mx" required /></label><label>Contraseña<div className="password-input"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña" required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label></>}
-      <button className="primary-button wide" type="submit" disabled={busy || (mode === 'signup' && !online)}>{busy ? 'Procesando...' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}</button><button type="button" className="auth-switch" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); onError(''); }}>{mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}</button>
+      {mode === 'login' && <><PasskeySignIn disabled={busy} onBusyChange={setBusy} onError={onError} /><label>Correo de alumno<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="2311081469@alumno.utpuebla.edu.mx" required /></label><label>Contraseña<div className="password-input"><input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña" required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label></>}
+      <button className="primary-button wide" type="submit" disabled={busy || (mode === 'signup' && !online)}>{busy ? 'Procesando...' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}</button><button type="button" className="auth-switch" disabled={busy} onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); onError(''); }}>{mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}</button>
     </form></div>;
 }
 

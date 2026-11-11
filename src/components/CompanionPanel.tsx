@@ -27,7 +27,7 @@ function deliveryOf(status: string): string {
   return 'Sin estado de entrega WhatsApp';
 }
 
-export default function CompanionPanel({ tripId, tripRequestId, userId }: { tripId: string; tripRequestId: string; userId: string }) {
+export default function CompanionPanel({ tripId, tripRequestId, userId, tripLabel, autoPrompt = false }: { tripId: string; tripRequestId: string; userId: string; tripLabel: string; autoPrompt?: boolean }) {
   const [rows, setRows] = useState<CompanionRow[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -49,10 +49,14 @@ export default function CompanionPanel({ tripId, tripRequestId, userId }: { trip
       if (!active) return;
       setActivePreference(data?.active === true);
       setPreferenceKnown(true);
-      if (!data) setShowModal(true);
+      const promptKey = `studentgo-companion-prompt:${tripId}:${userId}`;
+      if (!data && autoPrompt && window.sessionStorage.getItem(promptKey) !== 'seen') {
+        window.sessionStorage.setItem(promptKey, 'seen');
+        setShowModal(true);
+      }
     });
     return () => { active = false; };
-  }, [tripId, userId]);
+  }, [tripId, userId, autoPrompt]);
 
   const activeCount = rows?.filter((row) => !row.revoked_at && !row.closed_at && new Date(row.expires_at).getTime() > Date.now()).length ?? 0;
 
@@ -86,10 +90,10 @@ export default function CompanionPanel({ tripId, tripRequestId, userId }: { trip
 
   return <div className="companion-panel">
     <div className="trip-meta">
-      <span><ShieldCheck size={14} /> {activeCount} de 3 personas con acceso</span>
-      <button className="small-button" disabled={activeCount >= 3} onClick={() => setShowModal(true)}><UserPlus size={14} /> {activePreference ? 'Gestionar acompañamiento' : 'Acompañamiento Inteligente'}</button>
+      <span><ShieldCheck size={14} /> Acompañamiento del pasajero · {activeCount} de 3 personas con acceso</span>
+      <button className="small-button" disabled={activeCount >= 3} onClick={() => setShowModal(true)}><UserPlus size={14} /> {activePreference ? 'Gestionar acompañamiento' : 'Configurar acompañamiento'}</button>
     </div>
-    {preferenceKnown && !activePreference && <div className="scanner-status">¿Quieres activar Acompañamiento Inteligente y compartir tu recorrido con personas de confianza? Tú decides; el QR y el SOS no activan esta función.</div>}
+    {preferenceKnown && !activePreference && <div className="scanner-status">Tu QR confirmó el abordaje. Puedes compartir tu recorrido cuando quieras; el QR y el SOS no dan consentimiento por ti.</div>}
     {activeCount > 0 && <p className="scanner-status">{locationMessage}</p>}
     {failed && <div className="auth-error">No pudimos cargar tus acompañantes.</div>}
     {rows?.map((row) => {
@@ -101,7 +105,7 @@ export default function CompanionPanel({ tripId, tripRequestId, userId }: { trip
       </div>;
     })}
     {message && <p className="scanner-status">{message}</p>}
-    {showModal && <CompanionShareModal tripId={tripId} tripRequestId={tripRequestId} userId={userId} activeCount={activeCount} onClose={() => setShowModal(false)} onCreated={() => {
+    {showModal && <CompanionShareModal tripId={tripId} tripRequestId={tripRequestId} userId={userId} tripLabel={tripLabel} activeCount={activeCount} onClose={() => setShowModal(false)} onCreated={() => {
       void load();
       void supabase.from('trip_companionship_preferences').select('active').eq('trip_id', tripId).eq('user_id', userId).maybeSingle().then(({ data }) => setActivePreference(data?.active === true));
     }} />}

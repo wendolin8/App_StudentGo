@@ -6,23 +6,29 @@ export function useRides(userId: string, isDriver: boolean) {
   const [groups, setGroups] = useState<DriverTripGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const reload = useCallback(async () => {
+  // Polling keeps the two roles in sync, but it must not redraw the entire
+  // Requests page as "loading" every fifteen seconds while someone uses it.
+  const reload = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     const [passenger, driver] = await Promise.all([
       fetchPassengerRides(userId),
-      isDriver ? fetchDriverTrips(userId) : Promise.resolve<DriverTripGroup[]>([]),
+      isDriver ? fetchDriverTrips(userId) : Promise.resolve({ data: [] as DriverTripGroup[], error: null }),
     ]);
-    setFailed(!passenger || !driver);
-    setRides(passenger ?? []);
-    setGroups(driver ?? []);
-    setLoading(false);
+    const message = passenger.error ?? driver.error;
+    setFailed(Boolean(message));
+    setErrorMessage(message ?? '');
+    setRides(passenger.data);
+    setGroups(driver.data);
+    if (showLoading) setLoading(false);
   }, [userId, isDriver]);
 
   useEffect(() => {
-    void reload();
-    const timer = window.setInterval(() => { void reload(); }, 15000);
+    void reload(true);
+    const timer = window.setInterval(() => { void reload(false); }, 15000);
     return () => window.clearInterval(timer);
   }, [reload]);
 
-  return { rides, groups, loading, failed, reload };
+  return { rides, groups, loading, failed, errorMessage, reload };
 }

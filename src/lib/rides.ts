@@ -26,11 +26,13 @@ export type RideRequest = {
   passengerConfirmedAt: string | null;
   tripStartedAt: string | null;
   tripCompletedAt: string | null;
+  qrUsedAt: string | null;
 };
 
 export type DriverRequest = RideRequest & { passengerName: string };
 export type PassengerRide = { request: RideRequest; trip: RideTrip };
 export type DriverTripGroup = { trip: RideTrip; requests: DriverRequest[] };
+export type RideFetchResult<T> = { data: T; error: string | null };
 
 type TripRow = {
   id: string;
@@ -55,10 +57,11 @@ type RequestRow = {
   passenger_confirmed_at: string | null;
   trip_started_at: string | null;
   trip_completed_at: string | null;
+  qr_used_at: string | null;
 };
 
 const TRIP_SELECT = 'id, driver_id, origin_text, destination_text, departure_at, suggested_fare, vehicle_name, vehicle_plates, status, meeting_point_reached_at';
-const REQUEST_SELECT = 'id, trip_id, passenger_id, status, fare, requested_at, passenger_confirmed_at, trip_started_at, trip_completed_at';
+const REQUEST_SELECT = 'id, trip_id, passenger_id, status, fare, requested_at, passenger_confirmed_at, trip_started_at, trip_completed_at, qr_used_at';
 
 function toTrip(row: TripRow): RideTrip {
   return {
@@ -72,7 +75,7 @@ function toRequest(row: RequestRow): RideRequest {
   return {
     id: row.id, tripId: row.trip_id, passengerId: row.passenger_id, status: row.status, fare: Number(row.fare ?? 0),
     requestedAt: row.requested_at, passengerConfirmedAt: row.passenger_confirmed_at,
-    tripStartedAt: row.trip_started_at, tripCompletedAt: row.trip_completed_at,
+    tripStartedAt: row.trip_started_at, tripCompletedAt: row.trip_completed_at, qrUsedAt: row.qr_used_at,
   };
 }
 
@@ -83,28 +86,28 @@ function unavailableTrip(tripId: string, departureAt: string): RideTrip {
   };
 }
 
-export async function fetchPassengerRides(userId: string): Promise<PassengerRide[] | null> {
+export async function fetchPassengerRides(userId: string): Promise<RideFetchResult<PassengerRide[]>> {
   const { data: requestRows, error: requestError } = await supabase.from('trip_requests').select(REQUEST_SELECT).eq('passenger_id', userId).order('requested_at', { ascending: false });
-  if (requestError) return null;
+  if (requestError) return { data: [], error: `No se pudieron consultar tus solicitudes enviadas: ${requestError.message}` };
   const requests = (requestRows ?? []) as RequestRow[];
-  if (!requests.length) return [];
+  if (!requests.length) return { data: [], error: null };
   const tripIds = [...new Set(requests.map((row) => row.trip_id))];
   const { data: tripRows, error: tripError } = await supabase.from('trips').select(TRIP_SELECT).in('id', tripIds);
-  if (tripError) return null;
+  if (tripError) return { data: [], error: `Tus solicitudes se encontraron, pero no se pudieron cargar sus viajes: ${tripError.message}` };
   const trips = new Map(((tripRows ?? []) as TripRow[]).map((row) => [row.id, toTrip(row)]));
-  return requests.map((row) => ({
+  return { data: requests.map((row) => ({
     request: toRequest(row),
     trip: trips.get(row.trip_id) ?? unavailableTrip(row.trip_id, row.requested_at),
-  }));
+  })), error: null };
 }
 
-export async function fetchDriverTrips(userId: string): Promise<DriverTripGroup[] | null> {
+export async function fetchDriverTrips(userId: string): Promise<RideFetchResult<DriverTripGroup[]>> {
   const { data: tripRows, error: tripError } = await supabase.from('trips').select(TRIP_SELECT).eq('driver_id', userId).order('departure_at', { ascending: false });
-  if (tripError) return null;
+  if (tripError) return { data: [], error: `No se pudieron consultar tus viajes publicados: ${tripError.message}` };
   const trips = ((tripRows ?? []) as TripRow[]).map(toTrip);
-  if (!trips.length) return [];
+  if (!trips.length) return { data: [], error: null };
   const { data: requestRows, error: requestError } = await supabase.from('trip_requests').select(REQUEST_SELECT).in('trip_id', trips.map((trip) => trip.id)).order('requested_at');
-  if (requestError) return null;
+  if (requestError) return { data: [], error: `Tus viajes se encontraron, pero no se pudieron cargar las solicitudes recibidas: ${requestError.message}` };
   const requests = (requestRows ?? []) as RequestRow[];
   const passengerIds = [...new Set(requests.map((row) => row.passenger_id))];
   const names = new Map<string, string>();
@@ -112,16 +115,25 @@ export async function fetchDriverTrips(userId: string): Promise<DriverTripGroup[
     const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', passengerIds);
     (profiles ?? []).forEach((profile) => { names.set(String(profile.id), profile.full_name ?? 'Estudiante'); });
   }
-  return trips.map((trip) => ({
+  return { data: trips.map((trip) => ({
     trip,
     requests: requests
       .filter((row) => row.trip_id === trip.id)
       .map((row) => ({ ...toRequest(row), passengerName: names.get(row.passenger_id) ?? 'Estudiante' })),
-  }));
+  })), error: null };
 }
 
 export function isFinishedTrip(status: RideTripStatus): boolean {
   return status === 'COMPLETED' || status === 'CANCELLED';
+}
+
+/**
+ * The companion setup is a passenger-only UI step. A request becomes eligible
+ * only after its own QR was actually consumed by the driver; accepting a seat
+ * or starting another passenger's trip must never trigger it.
+ */
+export function canOfferPassengerCompanionship(request: RideRequest): boolean {
+  return request.status === 'ACCEPTED' && Boolean(request.qrUsedAt);
 }
 
 export const REQUEST_LABEL: Record<RequestStatus, string> = { PENDING: 'Pendiente', ACCEPTED: 'Aceptada', REJECTED: 'Rechazada', CANCELLED: 'Cancelada' };

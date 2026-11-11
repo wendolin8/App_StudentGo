@@ -7,6 +7,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import CredentialReviews from '@/components/credentials/CredentialReviews';
 import SosIncidentDetail from '@/components/SosIncidentDetail';
+import PasskeySettings from '@/components/PasskeySettings';
 
 type AdminSection = 'credentials' | 'overview' | 'applications' | 'students' | 'trips' | 'sos' | 'notices' | 'settings';
 type AdminProfile = { id: string; full_name: string; email: string };
@@ -171,7 +172,7 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
         {section === 'trips' && <Trips trips={trips} />}
         {section === 'sos' && <SosAlerts alerts={sosAlerts} />}
         {section === 'notices' && <Notices announcements={announcements} draft={noticeDraft} setDraft={setNoticeDraft} onCreate={() => { void createNotice(); }} onDelete={(id) => { void deleteNotice(id); }} />}
-        {section === 'settings' && <SettingsView />}
+        {section === 'settings' && <><SettingsView /><div className="admin-content"><PasskeySettings key={profile.id} userId={profile.id} /></div></>}
       </>}
       {selectedApplication && <div className="modal-backdrop" onMouseDown={() => setSelectedApplication(null)}><div className="modal-card admin-review-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSelectedApplication(null)}><X size={18} /></button><p className="eyebrow center">SOLICITUD DE CONDUCTOR</p><h2>{selectedApplication.applicant?.full_name ?? 'Estudiante sin datos'}</h2><p className="admin-modal-meta">{selectedApplication.applicant?.student_number ?? 'Sin matrícula'} · {selectedApplication.vehicle ? `${selectedApplication.vehicle.brand} ${selectedApplication.vehicle.model}` : 'Vehículo sin datos'} · Placas {selectedApplication.vehicle?.plates ?? '—'}</p><div className="admin-doc-links"><a href={documentLinks.license} target="_blank" rel="noreferrer"><FileCheck2 size={16} /> Abrir licencia <ExternalLink size={13} /></a><a href={documentLinks.registration} target="_blank" rel="noreferrer"><FileCheck2 size={16} /> Abrir tarjeta de circulación <ExternalLink size={13} /></a></div>{selectedApplication.status === 'PENDING_REVIEW' ? <><textarea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Motivo si rechazas la solicitud" /><div className="admin-review-actions"><button className="primary-button" onClick={() => { void reviewApplication(true); }}><Check size={16} /> Aprobar</button><button className="secondary-button" onClick={() => { void reviewApplication(false); }}><X size={16} /> Rechazar</button></div></> : <p className="admin-muted">{selectedApplication.status === 'APPROVED' ? 'Aprobada' : 'Rechazada'} el {selectedApplication.reviewed_at ? new Date(selectedApplication.reviewed_at).toLocaleString('es-MX') : 'sin fecha registrada'}{selectedApplication.reviewer ? ` por ${selectedApplication.reviewer.full_name}` : ''}{selectedApplication.rejection_reason ? ` · Motivo: ${selectedApplication.rejection_reason}` : ''}.</p>}</div></div>}
     </main>
