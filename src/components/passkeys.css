@@ -1,0 +1,33 @@
+.passkey-login { margin: 20px 0 18px; }
+.passkey-button { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 13px 16px; border: 1px solid #c9c4f5; border-radius: 12px; color: #4535b3; background: #f0eeff; font-size: 14px; font-weight: 700; }
+.passkey-button:hover:not(:disabled) { background: #e6e1ff; }
+.passkey-button:disabled, .passkey-settings button:disabled { opacity: .55; cursor: default; }
+.passkey-button:focus-visible, .passkey-link:focus-visible, .passkey-name input:focus-visible { outline: 3px solid #8777ef; outline-offset: 3px; }
+.passkey-help { margin: 10px 0; color: #626a83; font-size: 12px; line-height: 1.6; }
+.passkey-divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: #747b92; font-size: 12px; }
+.passkey-divider::before, .passkey-divider::after { content: ''; flex: 1; height: 1px; background: #e7e7f2; }
+.passkey-settings { padding: clamp(16px, 4vw, 24px); margin: 20px 0; text-align: left; }
+.passkey-heading { display: flex; align-items: flex-start; gap: 12px; color: #6354ec; }
+.passkey-heading > svg { flex-shrink: 0; }
+.passkey-heading h2 { margin: 0; color: #263052; font-size: 19px; }
+.passkey-heading p { margin: 6px 0; color: #626a83; font-size: 13px; line-height: 1.5; }
+.passkey-status { padding: 12px; border-radius: 10px; background: #f1f3fb; font-size: 13px; line-height: 1.5; }
+.passkey-error { background: #fff0ef; color: #9b272b; }
+.passkey-success { background: #e9f7ef; color: #1d6844; }
+.passkey-link { display: inline-flex; align-items: center; gap: 5px; margin: 8px 0; padding: 5px 0; background: transparent; color: #5546ba; font-size: 13px; text-align: left; }
+.passkey-list-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 24px; }
+.passkey-list-title h3 { margin: 0; font-size: 15px; }
+.passkey-list { list-style: none; padding: 0; margin: 10px 0 0; }
+.passkey-list li { display: flex; gap: 12px; padding: 15px 0; border-top: 1px solid #e7e7f2; }
+.passkey-list li > svg { flex-shrink: 0; margin-top: 9px; color: #6557c4; }
+.passkey-item { flex: 1; min-width: 0; }
+.passkey-item small { display: block; margin-top: 7px; color: #72798d; font-size: 11px; }
+.passkey-name { display: flex; flex-wrap: wrap; gap: 8px; }
+.passkey-name input { flex: 1; min-width: 120px; width: 100%; padding: 9px; border: 1px solid #dedfec; border-radius: 8px; color: #263052; }
+.passkey-name button, .passkey-delete-confirm button { padding: 9px; border-radius: 8px; background: #f0eeff; color: #5143ac; font-size: 12px; }
+.passkey-delete-confirm p { margin: 10px 0; font-size: 12px; line-height: 1.5; }
+.passkey-delete-confirm button { margin-right: 8px; }
+.passkey-onboarding { width: min(620px, calc(100% - 32px)); max-height: calc(100dvh - 32px); padding: clamp(18px, 4vw, 30px); border: 0; border-radius: 20px; color: #263052; background: #f7f8ff; overflow: auto; }
+.passkey-onboarding::backdrop { background: #131b3c9c; }
+.passkey-onboarding h1 { font-size: 24px; margin: 0 0 12px; }
+.passkey-onboarding > p { line-height: 1.6; font-size: 14px; }

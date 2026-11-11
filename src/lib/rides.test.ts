@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { canOfferPassengerCompanionship, type RideRequest } from './rides';
+
+// These tests exercise ride rules without connecting to a real database.
+vi.mock('@/lib/supabase', () => ({ supabase: {} }));
 
 function request(overrides: Partial<RideRequest> = {}): RideRequest {
   return {
