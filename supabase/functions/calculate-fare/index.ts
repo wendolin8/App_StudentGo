@@ -69,7 +69,7 @@ async function requestGeminiAdjustment(input: {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   if (!apiKey) return null;
 
-  const configuredModel = Deno.env.get('GEMINI_MODEL') ?? DEFAULT_GEMINI_MODEL;
+  const configuredModel = Deno.env.get('FARE_GEMINI_MODEL') ?? DEFAULT_GEMINI_MODEL;
   const model = /^[a-zA-Z0-9.-]+$/.test(configuredModel) ? configuredModel : DEFAULT_GEMINI_MODEL;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(endpoint, {

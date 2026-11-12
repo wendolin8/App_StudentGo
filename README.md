@@ -133,3 +133,5 @@ migraciones restringen los datos privados a usuarios autenticados.
 
 Referencias: [variables y modos de Vite](https://vite.dev/guide/env-and-mode.html)
 y [claves API de Supabase](https://supabase.com/docs/guides/getting-started/api-keys).
+
+Consulta la [innovación de tarifas con IA](docs/innovacion-tarifas-ia.md) para conocer su cálculo, seguridad, despliegue y limitaciones.
