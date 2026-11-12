@@ -359,7 +359,7 @@ function MapCard() {
 }
 
 function TripCard({ trip, status, onSelect }: { trip: Trip; status?: TripStatus; onSelect: () => void }) {
-  return <article className="trip-card"><div className="trip-main"><div className="avatar trip-avatar" style={{ background: trip.color }}>{trip.initials}</div><div className="trip-copy"><strong>{trip.driver}</strong><span>{trip.car}</span></div><div className="trip-price"><strong>${trip.price}</strong><span>MXN · ref.</span></div></div><div className="trip-route"><div><span className="route-dot purple" />{trip.from}</div><div className="route-connector" /><div><span className="route-dot dark" />{trip.to}</div></div><div className="trip-meta"><span><Clock3 size={14} /> {trip.time}</span><span><UsersRound size={14} /> {trip.seats} lugares</span>{status ? <span className={`status-pill ${status.toLowerCase()}`}>{status === 'PENDING' ? 'Pendiente' : status === 'ACCEPTED' ? 'Aceptado' : status === 'COMPLETED' ? 'Completado' : status}</span> : <button className="small-button" onClick={onSelect}>Solicitar</button>}</div></article>;
+  return <article className="trip-card"><div className="trip-main"><div className="avatar trip-avatar" style={{ background: trip.color }}>{trip.initials}</div><div className="trip-copy"><strong>{trip.driver}</strong><span>{trip.car}</span></div><div className="trip-price"><strong>Tarifa individual</strong><span>Se calcula al solicitar</span></div></div><div className="trip-route"><div><span className="route-dot purple" />{trip.from}</div><div className="route-connector" /><div><span className="route-dot dark" />{trip.to}</div></div><div className="trip-meta"><span><Clock3 size={14} /> {trip.time}</span><span><UsersRound size={14} /> {trip.seats} lugares</span>{status ? <span className={`status-pill ${status.toLowerCase()}`}>{status === 'PENDING' ? 'Pendiente' : status === 'ACCEPTED' ? 'Aceptado' : status === 'COMPLETED' ? 'Completado' : status}</span> : <button className="small-button" onClick={onSelect}>Solicitar</button>}</div></article>;
 }
 
 
@@ -499,7 +499,7 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
     <button className="modal-close" onClick={onClose}><X size={18} /></button><div ref={containerRef} className="leaflet-container-custom modal-map" />
     <div className="modal-content"><p className="eyebrow">DETALLE DEL VIAJE</p><h2>{trip.route}</h2>
       <div className="detail-grid"><div><MapPin size={17} /><span>Salida<strong>{trip.time}</strong></span></div><div><Car size={17} /><span>Vehículo<strong>{trip.car}</strong></span></div><div><UsersRound size={17} /><span>Disponibles<strong>{trip.seats} lugares</strong></span></div><div><Navigation size={17} /><span>Distancia<strong>{trip.distanceKm.toFixed(1)} km · {Math.round(trip.durationMin)} min</strong></span></div></div>
-      <div className="fare-card"><p className="eyebrow">REFERENCIA PARA EL RECORRIDO COMPLETO</p><strong>${trip.price} MXN</strong><span>Tu tarifa dependerá del punto donde bajes.</span></div>
+      <div className="fare-card"><p className="eyebrow">TARIFA POR PASAJERO</p><span>Se calculará según tu punto de bajada. Gemini puede ajustar la fórmula; si no está disponible, se usará la tarifa base.</span></div>
       {status ? <div className="request-confirmed"><Check size={20} /><div><strong>{status === 'PENDING' ? 'Solicitud enviada' : status === 'ACCEPTED' ? 'Viaje confirmado' : status === 'COMPLETED' ? 'Viaje completado' : `Solicitud ${status}`}</strong><span>{status === 'PENDING' ? 'Te avisaremos cuando el conductor responda.' : 'Tu lugar está reservado.'}</span></div></div> : <>
         <DropoffPicker origin={trip.origin} destination={trip.destination} onSelected={(place, route) => { void selectDropoff(place, route); }} />
         {loadingQuote && <p className="scanner-status">Calculando tu tarifa...</p>}
@@ -574,9 +574,9 @@ function PublishTripModal({ vehicles, onClose, onPublish }: { vehicles: Array<{ 
     <PlaceSearch label="Destino" value={draft.destinationLabel} onSelect={(place) => updatePlace('destination', place)} />
     <label className="form-label">Fecha y hora<input type="datetime-local" value={draft.departureAt} onChange={(event) => setDraft({ ...draft, departureAt: event.target.value })} /></label>
     <label className="form-label">Lugares disponibles<select value={draft.availableSeats} onChange={(event) => setDraft({ ...draft, availableSeats: Number(event.target.value) })}>{Array.from({ length: vehicle?.capacity ?? 1 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
-    <button className="secondary-button wide" disabled={!draft.origin || !draft.destination || searching} onClick={() => { void calculateRoute(); }}>{searching ? 'Calculando ruta y tarifa...' : 'Calcular ruta y tarifa'}</button>
+    <button className="secondary-button wide" disabled={!draft.origin || !draft.destination || searching} onClick={() => { void calculateRoute(); }}>{searching ? 'Calculando ruta...' : 'Calcular ruta'}</button>
     {fareMessage && <p className="scanner-status" role="alert">{fareMessage}</p>}
-    {route && referenceFare !== null && <div className="fare-card"><p className="eyebrow">TARIFA DE REFERENCIA POR PASAJERO</p><span>{route.distanceKm.toFixed(1)} km · {Math.round(route.durationMin)} min</span><strong>${referenceFare.toFixed(2)} MXN</strong><span>Cada pasajero verá una tarifa individual según su punto de bajada.</span></div>}
+    <div className="fare-card"><p className="eyebrow">TARIFA INDIVIDUAL</p><span>La tarifa de cada pasajero se calculará según su punto de bajada. Gemini podrá ajustar la fórmula; si no está disponible, se usará la tarifa base.</span></div>
     <button className="primary-button wide" disabled={!route || referenceFare === null || !vehicleId} onClick={() => onPublish(draft, vehicleId, route)}>Publicar viaje</button>
   </div></div>;
 }
