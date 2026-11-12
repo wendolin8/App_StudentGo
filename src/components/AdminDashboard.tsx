@@ -5,9 +5,11 @@ import {
   ShieldCheck, Siren, Users, X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import CredentialReviews from '@/components/credentials/CredentialReviews';
 import SosIncidentDetail from '@/components/SosIncidentDetail';
+import PasskeySettings from '@/components/PasskeySettings';
 
-type AdminSection = 'overview' | 'applications' | 'students' | 'trips' | 'sos' | 'notices' | 'settings';
+type AdminSection = 'credentials' | 'overview' | 'applications' | 'students' | 'trips' | 'sos' | 'notices' | 'settings';
 type AdminProfile = { id: string; full_name: string; email: string };
 type StudentRow = { id: string; full_name: string; email: string; student_number: string; role: string; student_verified: boolean; driver_verified: boolean; updated_at: string };
 type ApplicationRow = { id: string; user_id: string; status: string; submitted_at: string | null; approved_at: string | null; approved_by: string | null; reviewed_at: string | null; reviewed_by: string | null; rejection_reason: string | null; applicant: { full_name: string; email: string; student_number: string | null } | null; reviewer: { full_name: string } | null; vehicle: { id: string; brand: string; model: string; plates: string; vehicle_year: number; color: string; license_path: string; registration_card_path: string } | null };
@@ -20,6 +22,7 @@ type NavItem = { id: AdminSection; label: string; icon: typeof LayoutDashboard }
 const navItems: NavItem[] = [
   { id: 'overview', label: 'Panel general', icon: LayoutDashboard },
   { id: 'applications', label: 'Solicitudes', icon: ClipboardCheck },
+  { id: 'credentials', label: 'Credenciales', icon: FileCheck2 },
   { id: 'students', label: 'Estudiantes', icon: GraduationCap },
   { id: 'trips', label: 'Viajes', icon: Route },
   { id: 'sos', label: 'Incidentes SOS', icon: Siren },
@@ -164,11 +167,12 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
       {loading ? <div className="admin-loading"><RefreshCw size={22} /> Cargando información segura...</div> : <>
         {section === 'overview' && <Overview stats={stats} profiles={communityProfiles} sosAlerts={sosAlerts} onNavigate={setSection} />}
         {section === 'applications' && <Applications applications={filteredApplications} counts={applicationCounts} activeTab={applicationTab} search={applicationSearch} onTabChange={setApplicationTab} onSearch={setApplicationSearch} onOpen={openDocuments} />}
+        {section === 'credentials' && <CredentialReviews onChange={() => void loadDashboard()} />}
         {section === 'students' && <Students students={filteredStudents} search={search} onSearch={setSearch} />}
         {section === 'trips' && <Trips trips={trips} />}
         {section === 'sos' && <SosAlerts alerts={sosAlerts} />}
         {section === 'notices' && <Notices announcements={announcements} draft={noticeDraft} setDraft={setNoticeDraft} onCreate={() => { void createNotice(); }} onDelete={(id) => { void deleteNotice(id); }} />}
-        {section === 'settings' && <SettingsView />}
+        {section === 'settings' && <><SettingsView /><div className="admin-content"><PasskeySettings key={profile.id} userId={profile.id} /></div></>}
       </>}
       {selectedApplication && <div className="modal-backdrop" onMouseDown={() => setSelectedApplication(null)}><div className="modal-card admin-review-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setSelectedApplication(null)}><X size={18} /></button><p className="eyebrow center">SOLICITUD DE CONDUCTOR</p><h2>{selectedApplication.applicant?.full_name ?? 'Estudiante sin datos'}</h2><p className="admin-modal-meta">{selectedApplication.applicant?.student_number ?? 'Sin matrícula'} · {selectedApplication.vehicle ? `${selectedApplication.vehicle.brand} ${selectedApplication.vehicle.model}` : 'Vehículo sin datos'} · Placas {selectedApplication.vehicle?.plates ?? '—'}</p><div className="admin-doc-links"><a href={documentLinks.license} target="_blank" rel="noreferrer"><FileCheck2 size={16} /> Abrir licencia <ExternalLink size={13} /></a><a href={documentLinks.registration} target="_blank" rel="noreferrer"><FileCheck2 size={16} /> Abrir tarjeta de circulación <ExternalLink size={13} /></a></div>{selectedApplication.status === 'PENDING_REVIEW' ? <><textarea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Motivo si rechazas la solicitud" /><div className="admin-review-actions"><button className="primary-button" onClick={() => { void reviewApplication(true); }}><Check size={16} /> Aprobar</button><button className="secondary-button" onClick={() => { void reviewApplication(false); }}><X size={16} /> Rechazar</button></div></> : <p className="admin-muted">{selectedApplication.status === 'APPROVED' ? 'Aprobada' : 'Rechazada'} el {selectedApplication.reviewed_at ? new Date(selectedApplication.reviewed_at).toLocaleString('es-MX') : 'sin fecha registrada'}{selectedApplication.reviewer ? ` por ${selectedApplication.reviewer.full_name}` : ''}{selectedApplication.rejection_reason ? ` · Motivo: ${selectedApplication.rejection_reason}` : ''}.</p>}</div></div>}
     </main>

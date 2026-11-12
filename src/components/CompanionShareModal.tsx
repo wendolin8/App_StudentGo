@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { UserPlus, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { createCompanion, setCompanionshipPreference, type CompanionInput } from '@/lib/companions';
@@ -110,7 +111,7 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
     if (created.length) onCreated();
   }
 
-  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}><div className="modal-card companion-modal" role="dialog" aria-modal="true" aria-labelledby="companion-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+  const modal = <div className="modal-backdrop companion-modal-backdrop" role="presentation" onMouseDown={onClose}><div className="modal-card companion-modal" role="dialog" aria-modal="true" aria-labelledby="companion-modal-title" onMouseDown={(event) => event.stopPropagation()}>
     <button className="modal-close" onClick={onClose}><X size={18} /></button>
     <p className="eyebrow">ACOMPAÑAMIENTO INTELIGENTE · PASAJERO</p>
     <h2 id="companion-modal-title">Viaja acompañado con Student Go</h2>
@@ -145,4 +146,8 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
       <button className="secondary-button wide" onClick={onClose}>Listo</button>
     </>}
   </div></div>;
+
+  // Render on document.body so page layout, scroll containers, and cards can
+  // never crop the consent dialog.
+  return createPortal(modal, document.body);
 }
