@@ -684,8 +684,19 @@ function AuthScreen({ error, onError, onEnroll, onCancel }: {
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
         redirectTo: window.location.origin,
       });
-      if (resetError) onError('No se pudo solicitar el cambio. Revisa la configuración de correo e inténtalo de nuevo.');
-      else onError('Si la cuenta existe, recibirás un enlace para cambiar tu contraseña.');
+      if (resetError) {
+        const code = resetError.code ?? 'unknown_error';
+        console.error('Password recovery request rejected by Supabase', { status: resetError.status, code });
+        if (resetError.status === 429 || /rate.?limit|too.?many/i.test(code)) {
+          onError('Supabase limitó los correos de recuperación. Espera un poco antes de volver a solicitarlo.');
+        } else if (/redirect|url/i.test(`${code} ${resetError.message}`)) {
+          onError('Supabase rechazó la URL de regreso. Confirma que http://localhost:5173 esté en Redirect URLs del proyecto de pruebas.');
+        } else if ((resetError.status ?? 0) >= 500) {
+          onError(`Supabase no pudo enviar el correo (HTTP ${resetError.status}). Revisa la configuración del proveedor de correo.`);
+        } else {
+          onError(`Supabase rechazó la solicitud (HTTP ${resetError.status ?? 'sin estado'}, código ${code}).`);
+        }
+      } else onError('Si la cuenta existe, recibirás un enlace para cambiar tu contraseña.');
     } catch {
       onError('No pudimos conectar. Revisa tu conexión e intenta otra vez.');
     } finally { setBusy(false); }
