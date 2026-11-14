@@ -8,6 +8,19 @@
   "theme_color": "#1f2547",
   "lang": "es-MX",
   "icons": [
-    { "src": "/student-go-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
-  ]
+    {
+      "src": "/student-go-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/student-go-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "id": "/",
+  "scope": "/"
 }
