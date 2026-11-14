@@ -2,7 +2,7 @@
 const BUILD = { version: 'local', assets: [] };
 const CACHE_PREFIX = 'student-go-shell-';
 const CACHE = CACHE_PREFIX + BUILD.version;
-const APP_SHELL = ['/index.html', '/manifest.webmanifest', '/student-go-icon.svg', ...BUILD.assets];
+const APP_SHELL = ['/index.html', '/manifest.webmanifest', '/student-go-icon.svg', '/student-go-icon-192.png', '/student-go-icon-512.png', ...BUILD.assets];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) =>
