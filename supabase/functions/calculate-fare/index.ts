@@ -67,10 +67,14 @@ async function requestGeminiAdjustment(input: {
   availableSeats: number;
 }): Promise<{ adjustmentPct: number; reason: string } | null> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.warn('calculate-fare: GEMINI_API_KEY_MISSING; fallback=formula');
+    return null;
+  }
 
   const configuredModel = Deno.env.get('FARE_GEMINI_MODEL') ?? DEFAULT_GEMINI_MODEL;
   const model = /^[a-zA-Z0-9.-]+$/.test(configuredModel) ? configuredModel : DEFAULT_GEMINI_MODEL;
+  console.info('calculate-fare: modelo Gemini seleccionado', model);
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -103,11 +107,29 @@ async function requestGeminiAdjustment(input: {
     return null;
   }
 
-  const body = await response.json() as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  let body: {
+    candidates?: Array<{
+      finishReason?: string;
+      content?: { parts?: Array<{ text?: string }> };
+    }>;
   };
-  const text = body.candidates?.[0]?.content?.parts?.find((part) => typeof part.text === 'string')?.text;
-  return text ? parseGeminiAdjustment(text) : null;
+  try {
+    body = await response.json();
+  } catch {
+    console.error('calculate-fare: GEMINI_RESPONSE_INVALID_JSON; fallback=formula');
+    return null;
+  }
+
+  const candidate = body.candidates?.[0];
+  const text = candidate?.content?.parts?.find((part) => typeof part.text === 'string')?.text;
+  if (!text) {
+    console.warn('calculate-fare: GEMINI_RESPONSE_WITHOUT_TEXT; finish_reason=', candidate?.finishReason ?? 'unknown');
+    return null;
+  }
+
+  const suggestion = parseGeminiAdjustment(text);
+  if (!suggestion) console.warn('calculate-fare: GEMINI_RESPONSE_INVALID_SCHEMA; fallback=formula');
+  return suggestion;
 }
 
 function numericConfig(row: Record<string, number | string>): FareConfig {
@@ -231,8 +253,9 @@ Deno.serve(async (request: Request) => {
       adjustmentPct = suggestion.adjustmentPct;
       explanation = suggestion.reason;
     }
-  } catch {
-    // La fórmula sigue disponible aunque falle Gemini.
+  } catch (error) {
+    const category = error instanceof Error ? error.name : 'UnknownError';
+    console.error('calculate-fare: GEMINI_TRANSPORT_ERROR; category=', category, 'fallback=formula');
   }
 
   const fare = source === 'ai'
