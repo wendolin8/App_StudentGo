@@ -31,6 +31,7 @@ type TripRow = {
 const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
 const MAX_ROUTE_RATIO = 1.2;
 const ROUTE_EXTRA_ALLOWANCE_KM = 2;
+const GEMINI_REQUEST_TIMEOUT_MS = 20_000;
 
 function isCoordinates(value: Coordinates): boolean {
   return Number.isFinite(value.lat) && value.lat >= -90 && value.lat <= 90
@@ -79,7 +80,7 @@ async function requestGeminiAdjustment(input: {
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(9000),
+    signal: AbortSignal.timeout(GEMINI_REQUEST_TIMEOUT_MS),
     body: JSON.stringify({
       systemInstruction: {
         parts: [{ text: 'Eres un asistente de tarifas de carpool universitario en Puebla. Sugiere un ajuste pequeño y justo a la tarifa base. No vuelvas a calcular el precio. El ajuste debe estar entre -20 y 20 por ciento. Da una razón breve en español basada únicamente en los datos recibidos.' }],
