@@ -446,7 +446,6 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dropoff, setDropoff] = useState<PlaceResult | null>(null);
   const [quote, setQuote] = useState<FareCalculation | null>(null);
-  const [isEstimated, setIsEstimated] = useState(false);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
@@ -465,11 +464,9 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
     setLoadingQuote(true);
     try {
       setQuote(await calculateTripFare(trip.id, place));
-      setIsEstimated(false);
     } catch {
       try {
         setQuote(estimateFareOffline(trip, place, route));
-        setIsEstimated(true);
       } catch (error) {
         setMessage((error as Error).message);
       }
@@ -487,7 +484,6 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
       try {
         confirmedQuote = await calculateTripFare(trip.id, dropoff);
         setQuote(confirmedQuote);
-        setIsEstimated(false);
       } catch {
         setMessage('Conéctate para obtener una cotización firmada antes de enviar la solicitud.');
         setSubmitting(false);
@@ -514,11 +510,7 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
       {status ? <div className="request-confirmed"><Check size={20} /><div><strong>{status === 'PENDING' ? 'Solicitud enviada' : status === 'ACCEPTED' ? 'Viaje confirmado' : status === 'COMPLETED' ? 'Viaje completado' : `Solicitud ${status}`}</strong><span>{status === 'PENDING' ? 'Te avisaremos cuando el conductor responda.' : 'Tu lugar está reservado.'}</span></div></div> : <>
         <DropoffPicker origin={trip.origin} destination={trip.destination} onSelected={(place, route) => { void selectDropoff(place, route); }} />
         {loadingQuote && <p className="scanner-status">Calculando tu tarifa...</p>}
-        {quote && <div className="fare-card"><p className="eyebrow">TARIFA INDIVIDUAL {isEstimated ? 'ESTIMADA' : 'PARA TU TRAMO'}</p><strong>${quote.fare.toFixed(2)} MXN</strong>
-          <span>{isEstimated ? 'Fórmula local aproximada' : quote.fare_source === 'ai' ? 'Fórmula base con ajuste de Gemini' : 'Calculada con la fórmula base'}</span>
-          <div className="fare-breakdown"><div><span>Base proporcional</span><strong>${quote.breakdown.components.base.toFixed(2)}</strong></div><div><span>Distancia</span><strong>${quote.breakdown.components.distance.toFixed(2)}</strong></div><div><span>Tiempo</span><strong>${quote.breakdown.components.time.toFixed(2)}</strong></div><div><span>Gasolina</span><strong>${quote.breakdown.components.gasoline.toFixed(2)}</strong></div>{quote.breakdown.adjustment_pct !== 0 && <div><span>Ajuste IA ({quote.breakdown.adjustment_pct}%)</span><strong>${(quote.fare - quote.breakdown.formula_total).toFixed(2)}</strong></div>}</div>
-          <p className="fare-explanation">{quote.explanation}</p>
-        </div>}
+        {quote && <div className="fare-card"><p className="eyebrow">TARIFA INDIVIDUAL PARA TU TRAMO</p><strong>${quote.fare.toFixed(2)} MXN</strong></div>}
         {message && <p className="scanner-status" role="alert">{message}</p>}
         <button className="primary-button wide" disabled={!dropoff || !quote || loadingQuote || submitting} onClick={() => { void sendRequest(); }}>{submitting ? 'Enviando solicitud...' : 'Solicitar lugar'} <ChevronRight size={17} /></button>
       </>}
