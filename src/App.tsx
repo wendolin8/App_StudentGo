@@ -82,6 +82,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [passwordRecovery, setPasswordRecovery] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('type') === 'recovery');
   const [authError, setAuthError] = useState('');
   const [persistedTrips, setPersistedTrips] = useState<Trip[]>([]);
   const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
@@ -139,14 +140,23 @@ function App() {
       setAuthLoading(false);
       if (data.session?.user) void loadProfile(data.session.user.id);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       setUser(session?.user ?? null);
       if (session?.user) void loadProfile(session.user.id);
       else setProfile(null);
     });
     return () => { mounted = false; listener.subscription.unsubscribe(); };
   }, [loadProfile]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    if (params.get('error_code') === 'otp_expired') {
+      setAuthError('El enlace de recuperación venció o ya se usó. Solicita uno nuevo.');
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`);
+    }
+  }, []);
 
   const loadTrips = useCallback(async () => {
     if (!user) return;
@@ -246,6 +256,7 @@ function App() {
   const trackingMatch = window.location.pathname.match(/^\/seguimiento\/([A-Za-z0-9_-]+)\/?$/);
   if (trackingMatch) return <CompanionTrackingPage token={trackingMatch[1]} />;
   if (authLoading) return <div className="auth-loading">Cargando StudentGo...</div>;
+  if (passwordRecovery) return <PasswordRecoveryScreen onCancel={() => { void supabase.auth.signOut(); setPasswordRecovery(false); }} onComplete={() => setPasswordRecovery(false)} />;
   if (!user) return <AuthScreen onEnroll={startEnrollment} onCancel={forgetPhotos} error={authError} onError={setAuthError} />;
 
   if (!profile) return <div className="auth-loading">Cargando perfil seguro...</div>;
@@ -607,11 +618,49 @@ function MobileDrawer({ active, isAdmin, onClose, onSelect, onDriver }: { active
 type SignupDraft = { name: string; lastName: string; matricula: string; career: string; group: string; phone: string; email: string; password: string; };
 type SignupEmergencyContact = { name: string; relationship: string; phone: string; whatsappConsent: boolean };
 
+function PasswordRecoveryScreen({ onCancel, onComplete }: { onCancel: () => void; onComplete: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const strongPassword = password.length >= 8 && /[A-ZÁÉÍÓÚÑ]/.test(password) && /\d/.test(password)
+    && /[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]/.test(password);
+
+  async function savePassword(): Promise<void> {
+    if (!strongPassword || password !== confirmation || busy) {
+      setMessage('Usa al menos 8 caracteres, una mayúscula, un número y un símbolo; ambas contraseñas deben coincidir.');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) setMessage('No se pudo cambiar la contraseña. Solicita un enlace nuevo e inténtalo otra vez.');
+      else setMessage('Contraseña actualizada. Ya puedes continuar.');
+    } catch {
+      setMessage('No pudimos conectar. Revisa tu conexión e inténtalo otra vez.');
+    } finally { setBusy(false); }
+  }
+
+  const passwordUpdated = message === 'Contraseña actualizada. Ya puedes continuar.';
+  return <div className="auth-screen"><div className="auth-art"><Brand /><h1>Recupera el acceso<br /><em>a tu cuenta.</em></h1><p>Elige una contraseña nueva para StudentGo.</p></div><form className="auth-card" onSubmit={(event) => { event.preventDefault(); void savePassword(); }}>
+    <p className="eyebrow">STUDENTGO</p><h2>Nueva contraseña</h2><p className="auth-lead">Debe tener 8 caracteres, una mayúscula, un número y un símbolo.</p>
+    <label>Contraseña nueva<input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required disabled={passwordUpdated} /></label>
+    <label>Confirma la contraseña<input type="password" autoComplete="new-password" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} minLength={8} required disabled={passwordUpdated} /></label>
+    {message && (passwordUpdated
+      ? <div className="request-confirmed" role="status"><div><strong>Contraseña actualizada</strong><span>Ya puedes continuar.</span></div></div>
+      : <div className="auth-error" role="alert">{message}</div>)}
+    {passwordUpdated
+      ? <button type="button" className="primary-button wide" onClick={onComplete}>Continuar</button>
+      : <><button type="submit" className="primary-button wide" disabled={busy}>{busy ? 'Guardando...' : 'Guardar contraseña'}</button><button type="button" className="auth-switch" disabled={busy} onClick={onCancel}>Cancelar</button></>}
+  </form></div>;
+}
+
 function AuthScreen({ error, onError, onEnroll, onCancel }: {
   onEnroll: (email: string, photos: Photos) => void; onCancel: () => void; error: string; onError: (message: string) => void }) {
   const online = useOnline();
   const [photos, setPhotos] = useState<Photos>(emptyPhotos);
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [email, setEmail] = useState(''); const [password, setPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState(''); const [showPassword, setShowPassword] = useState(false);
   const [draft, setDraft] = useState<SignupDraft>({ name: '', lastName: '', matricula: '', career: '', group: '', phone: '', email: '', password: '' });
   const [contacts, setContacts] = useState<[SignupEmergencyContact, SignupEmergencyContact]>([{ name: '', relationship: '', phone: '', whatsappConsent: false }, { name: '', relationship: '', phone: '', whatsappConsent: false }]);
@@ -627,6 +676,19 @@ function AuthScreen({ error, onError, onEnroll, onCancel }: {
       if (result.error) onError('No pudimos iniciar sesión. Revisa tu correo y contraseña.');
     } catch { onError('No pudimos conectar. Revisa tu conexión e intenta otra vez.'); }
     finally { setBusy(false); }
+  }
+  async function requestPasswordReset(): Promise<void> {
+    if (busy || !email.trim()) return;
+    setBusy(true); onError('');
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: window.location.origin,
+      });
+      if (resetError) onError('No se pudo solicitar el cambio. Revisa la configuración de correo e inténtalo de nuevo.');
+      else onError('Si la cuenta existe, recibirás un enlace para cambiar tu contraseña.');
+    } catch {
+      onError('No pudimos conectar. Revisa tu conexión e intenta otra vez.');
+    } finally { setBusy(false); }
   }
   async function signUp(): Promise<void> {
     if (busy || !navigator.onLine) return;
@@ -647,7 +709,7 @@ function AuthScreen({ error, onError, onEnroll, onCancel }: {
     } finally { setBusy(false); }
   }
   return <div className={`auth-screen ${mode === 'signup' ? 'signup-screen' : ''}`}><div className="auth-art"><Brand /><div className="auth-car"><Car size={86} /><div className="auth-route"><MapPin size={19} /><span /><MapPin size={19} /></div></div><h1>Comparte tu camino,<br /><em>llega más lejos.</em></h1><p>Movilidad universitaria hecha para compartir el camino.</p></div>
-    <form className={`auth-card ${mode === 'signup' ? 'signup-auth-card' : ''}`} onSubmit={(event) => { event.preventDefault(); if (mode === 'login') void signIn(); else void signUp(); }}><p className="eyebrow">STUDENTGO</p><h2>{mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}</h2><p className="auth-lead">{mode === 'login' ? 'Vuelve a tu comunidad universitaria.' : 'Registra tus datos y tus dos contactos de confianza.'}</p>{error && <div className="auth-error">{error}</div>}
+    <form className={`auth-card ${mode === 'signup' ? 'signup-auth-card' : ''}`} onSubmit={(event) => { event.preventDefault(); if (mode === 'login') void signIn(); else if (mode === 'signup') void signUp(); else void requestPasswordReset(); }}><p className="eyebrow">STUDENTGO</p><h2>{mode === 'login' ? 'Iniciar sesión' : mode === 'signup' ? 'Crear cuenta' : 'Restablecer contraseña'}</h2><p className="auth-lead">{mode === 'login' ? 'Vuelve a tu comunidad universitaria.' : mode === 'signup' ? 'Registra tus datos y tus dos contactos de confianza.' : 'Te enviaremos un enlace para elegir una contraseña nueva.'}</p>{error && <div className="auth-error" role="status">{error}</div>}
       {mode === 'signup' && <>
         <p className="passkey-help">Después de crear y confirmar tu cuenta podrás activar una clave de acceso para entrar con huella, rostro o PIN.</p>
         <div className="signup-details-grid">
@@ -665,8 +727,9 @@ function AuthScreen({ error, onError, onEnroll, onCancel }: {
         <div className="signup-details-grid password-grid"><label>Contraseña<div className="password-input"><input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Mínimo 8 caracteres" required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div><ul className="password-rules">{passwordRules.map(([label, met]) => <li className={met ? 'valid' : ''} key={label}>{met ? '✓' : '×'} {label}</li>)}</ul></label><label>Confirmar contraseña<input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Repite tu contraseña" required minLength={8} />{confirmPassword && password !== confirmPassword && <span className="field-error">Las contraseñas no coinciden.</span>}</label></div>
         <label className="consent-line location-consent"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} required /> Acepto que StudentGo solicite mi ubicación únicamente si activo Acompañamiento Inteligente.</label>
       </>}
-      {mode === 'login' && <><PasskeySignIn disabled={busy} onBusyChange={setBusy} onError={onError} /><label>Correo de alumno<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="2311081469@alumno.utpuebla.edu.mx" required /></label><label>Contraseña<div className="password-input"><input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña" required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label></>}
-      <button className="primary-button wide" type="submit" disabled={busy || (mode === 'signup' && !online)}>{busy ? 'Procesando...' : mode === 'login' ? 'Iniciar sesión' : 'Crear cuenta'}</button><button type="button" className="auth-switch" disabled={busy} onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); onError(''); }}>{mode === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Inicia sesión'}</button>
+      {(mode === 'login' || mode === 'forgot') && <label>Correo de alumno<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="2311081469@alumno.utpuebla.edu.mx" required /></label>}
+      {mode === 'login' && <><PasskeySignIn disabled={busy} onBusyChange={setBusy} onError={onError} /><label>Contraseña<div className="password-input"><input type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Tu contraseña" required minLength={8} /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label="Mostrar u ocultar contraseña">{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label><button type="button" className="auth-switch" disabled={busy} onClick={() => { setMode('forgot'); onError(''); }}>¿Olvidaste tu contraseña?</button></>}
+      <button className="primary-button wide" type="submit" disabled={busy || (mode === 'signup' && !online)}>{busy ? 'Procesando...' : mode === 'login' ? 'Iniciar sesión' : mode === 'signup' ? 'Crear cuenta' : 'Enviar enlace'}</button><button type="button" className="auth-switch" disabled={busy} onClick={() => { setMode(mode === 'signup' || mode === 'forgot' ? 'login' : 'signup'); onError(''); }}>{mode === 'login' ? '¿No tienes cuenta? Regístrate' : 'Volver a iniciar sesión'}</button>
     </form></div>;
 }
 
