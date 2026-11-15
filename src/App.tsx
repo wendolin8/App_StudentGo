@@ -1,3 +1,4 @@
+import { disablePush, resetPushForAccount } from '@/lib/push';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { offlineNotice, useOnline } from '@/components/credentials/useOnline';
 import CredentialFields from '@/components/credentials/CredentialFields';
@@ -78,7 +79,7 @@ function App() {
     setEnrollment({ email: email.trim().toLowerCase(), photos });
     setActiveTab('profile');
   }
-  const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [activeTab, setActiveTab] = useState<Tab>(() => new URLSearchParams(window.location.search).get('vista') === 'avisos' ? 'alerts' : 'home');
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -97,6 +98,19 @@ function App() {
   const [searchTo, setSearchTo] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const adminRedirected = useRef(false);
+
+  useEffect(() => {
+    if (!authLoading) void resetPushForAccount(user?.id ?? null).catch(() => undefined);
+  }, [authLoading, user?.id]);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const openNotices = (event: MessageEvent) => {
+      if (event.data?.type === 'STUDENTGO_OPEN_NOTIFICATIONS') setActiveTab('alerts');
+    };
+    navigator.serviceWorker.addEventListener('message', openNotices);
+    return () => navigator.serviceWorker.removeEventListener('message', openNotices);
+  }, []);
 
   const loadUnread = useCallback(async (userId: string) => {
     const { count } = await supabase.from('notifications').select('id', { count: 'exact', head: true }).eq('user_id', userId).is('read_at', null);
@@ -249,6 +263,7 @@ function App() {
 
   async function signOut(): Promise<void> {
     forgetPhotos();
+    await disablePush().catch(() => undefined);
     await supabase.auth.signOut();
     setProfile(null);
   }

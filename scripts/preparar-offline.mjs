@@ -17,7 +17,7 @@ if (!template.includes(marker) || !assets.length) {
   throw new Error('Revisa public/sw.js y el manifiesto de Vite antes de publicar.');
 }
 const hash = createHash('sha256').update(template);
-for (const file of ['index.html', 'manifest.webmanifest', 'student-go-icon.svg', ...assets]) {
+for (const file of ['index.html', 'manifest.webmanifest', 'student-go-icon.svg', 'student-go-icon-192.png', 'student-go-icon-512.png', ...assets]) {
   hash.update(file).update(await readFile(join(dist, file)));
 }
 const build = { version: hash.digest('hex').slice(0, 20), assets: assets.map(file => '/' + file) };

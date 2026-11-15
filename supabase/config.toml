@@ -435,3 +435,6 @@ verify_jwt = false
 [functions.request-trip]
 verify_jwt = false
 
+# The function validates user JWTs or the database webhook secret internally.
+[functions.notificaciones-push]
+verify_jwt = false
