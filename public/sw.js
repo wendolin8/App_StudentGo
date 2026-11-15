@@ -36,3 +36,35 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(caches.open(CACHE).then(async (cache) =>
     await cache.match(request, { ignoreVary: true }) || fetch(request)));
 });
+
+// Push payloads contain only a kind and a tag; private details remain inside the app.
+self.addEventListener('push', (event) => {
+  let message = {};
+  try { message = event.data?.json() || {}; } catch { /* Show a generic notice. */ }
+  const test = message.kind === 'test';
+  const tag = typeof message.tag === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(message.tag)
+    ? message.tag : 'studentgo-notice';
+  event.waitUntil(self.registration.showNotification('StudentGo', {
+    body: test ? '¡La prueba push llegó! Abre StudentGo para continuar.' : 'Tienes un nuevo aviso. Abre StudentGo para consultarlo.',
+    icon: '/student-go-icon-192.png',
+    tag,
+    data: { path: '/?vista=avisos' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const existing = windows.find(client => {
+      const url = new URL(client.url);
+      return url.origin === self.location.origin && url.pathname === '/';
+    });
+    if (existing) {
+      await existing.focus();
+      existing.postMessage({ type: 'STUDENTGO_OPEN_NOTIFICATIONS' });
+    } else {
+      await self.clients.openWindow(new URL('/?vista=avisos', self.location.origin).href);
+    }
+  })());
+});

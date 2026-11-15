@@ -4,6 +4,8 @@ import { Bell, Car, Shield } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import type { NotificationItem } from '@/lib/safety';
 
+import PushSettings from '@/components/PushSettings';
+
 type Filter = 'all' | 'unread' | 'trips' | 'security';
 const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: 'all', label: 'Todas' },
@@ -41,6 +43,7 @@ export default function NotificationsView({ user, onOpen, onChanged }: { user: U
 
   return <div className="page-wrap">
     <div className="page-title"><div><p className="eyebrow">AVISOS</p><h1>Centro de notificaciones</h1><p>Eventos reales de tus viajes y de tu seguridad</p></div></div>
+    <PushSettings key={user.id} userId={user.id} />
     <div className="segmented">{FILTERS.map((f) => <button key={f.value} className={filter === f.value ? 'active' : ''} onClick={() => setFilter(f.value)}>{f.label}</button>)}</div>
     {visible.length === 0 && <div className="empty-panel"><Bell size={28} /><p>No tienes notificaciones por el momento</p></div>}
     <div className="notifications">
