@@ -429,3 +429,7 @@ verify_jwt = false
 [functions.whatsapp-webhook]
 verify_jwt = false
 
+
+# The function validates user JWTs or the database webhook secret internally.
+[functions.notificaciones-push]
+verify_jwt = false
