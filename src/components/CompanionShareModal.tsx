@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Copy, MessageCircle, UserPlus, X } from 'lucide-react';
+import { Copy, UserPlus, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { createCompanion, setCompanionshipPreference, type CompanionInput } from '@/lib/companions';
-import { getCurrentPosition } from '@/lib/maps';
 
 type Option = 'contacts' | 'person' | 'both' | 'none';
 type ContactRow = { name: string; relationship: string; phone: string; whatsapp_consent_at: string | null };
@@ -72,14 +71,6 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
     if (targetCount > slotsFree) { setError('Este viaje ya tiene el máximo de enlaces activos.'); return; }
 
     setBusy(true);
-    let initialPosition;
-    try {
-      initialPosition = await getCurrentPosition();
-    } catch (locationError) {
-      setBusy(false);
-      setError(locationError instanceof Error ? `${locationError.message} No se creó ningún enlace ni se solicitó WhatsApp.` : 'No pudimos obtener tu ubicación. No se creó ningún enlace ni se solicitó WhatsApp.');
-      return;
-    }
     const selection = option === 'contacts' ? 'EMERGENCY_CONTACTS' : option === 'person' ? 'WAITING_PERSON' : 'BOTH';
     const preference = await setCompanionshipPreference(tripId, selection, true);
     if (!preference.ok) { setBusy(false); setError(preference.message); return; }
@@ -98,26 +89,10 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
       seenPhones.add(normalizedPhone);
       const outcome = await createCompanion(tripRequestId, item.input);
       if (!outcome.ok) { created.push({ label: item.label, status: 'NO_CREADO', detail: outcome.message }); continue; }
-      const { data: locationSaved, error: locationError } = await supabase.rpc('record_companion_location', {
-        p_trip_request_id: tripRequestId,
-        p_latitude: initialPosition.lat,
-        p_longitude: initialPosition.lng,
-      });
-      if (locationError || locationSaved !== true) {
-        created.push({
-          label: item.label,
-          status: 'GPS_PENDIENTE',
-          detail: 'El enlace se creó, pero no se pudo guardar la ubicación inicial.',
-          link: outcome.link,
-          phone: item.input.phone,
-          companionId: outcome.companionId,
-        });
-        continue;
-      }
       created.push({
         label: item.label,
         status: 'LISTO_PARA_COMPARTIR',
-        detail: 'Enlace privado creado. Compártelo manualmente solo con esta persona autorizada.',
+        detail: 'Enlace privado creado. El seguimiento comenzará cuando el viaje esté EN CURSO y autorices la ubicación del navegador.',
         link: outcome.link,
         phone: item.input.phone,
         companionId: outcome.companionId,
@@ -140,17 +115,6 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
     } catch {
       setError('No pudimos copiar el enlace. Puedes seleccionarlo y copiarlo manualmente.');
     }
-  }
-
-  function shareByWhatsApp(item: CreatedLink) {
-    if (!item.link || !item.phone) return;
-    const phone = item.phone.replace(/\D/g, '');
-    if (!phone) {
-      setError('No encontramos un número válido para abrir WhatsApp.');
-      return;
-    }
-    const message = `Hola ${item.label}. Te comparto un enlace privado y temporal de StudentGo para acompañar mi recorrido: ${item.link}`;
-    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer');
   }
 
   const modal = <div className="modal-backdrop companion-modal-backdrop" role="presentation" onMouseDown={onClose}><div className="modal-card companion-modal" role="dialog" aria-modal="true" aria-labelledby="companion-modal-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -177,17 +141,16 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
       </div>}
 
       <label className="form-label"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} /> Autorizo compartir mi ubicación durante este recorrido con las personas seleccionadas.</label>
-      <p className="scanner-status">El enlace se creará solo con tu consentimiento. Después podrás copiarlo o abrir WhatsApp para compartirlo manualmente.</p>
+      <p className="scanner-status">El enlace se creará solo con tu consentimiento. Después podrás copiarlo y compartirlo únicamente con las personas autorizadas.</p>
       {error && <div className="auth-error">{error}</div>}
       <div className="companion-modal-actions"><button className="secondary-button" disabled={busy} onClick={() => { void saveNowNot(); }}>Ahora no</button><button className="primary-button" disabled={busy || option === 'none' || !consent || (contacts === null && wantsContacts)} onClick={() => { void submit(); }}><UserPlus size={17} /> {busy ? 'Guardando...' : 'Guardar acompañamiento'}</button></div>
     </> : <>
       <p className="modal-lead">Enlaces privados listos para compartir manualmente.</p>
-      <p className="scanner-status">No se enviaron mensajes automáticamente. Revisa el mensaje antes de enviarlo por WhatsApp.</p>
+      <p className="scanner-status">No se enviaron mensajes automáticamente. Copia cada enlace y compártelo solo con la persona autorizada.</p>
       {links.map((item, index) => <div className="contact-item companion-created-link" key={linkKey(item) || `${item.label}-${index}`}>
         <div><strong>{item.label}</strong><span>{item.status}: {item.detail}</span>
           {item.link && <><code className="companion-link-preview">{item.link}</code><div className="companion-link-actions">
             <button type="button" className="secondary-button" onClick={() => { void copySecureLink(item); }}><Copy size={15} /> {copiedLinkId === linkKey(item) ? 'Enlace copiado' : 'Copiar enlace seguro'}</button>
-            {item.phone && <button type="button" className="primary-button" onClick={() => shareByWhatsApp(item)}><MessageCircle size={15} /> Compartir por WhatsApp</button>}
           </div></>}
         </div>
       </div>)}
