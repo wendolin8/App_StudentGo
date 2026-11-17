@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Copy, UserPlus, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { createCompanion, setCompanionshipPreference, type CompanionInput } from '@/lib/companions';
+import { createCompanion, createManualCompanionLink, setCompanionshipPreference, type CompanionInput } from '@/lib/companions';
 
 type Option = 'contacts' | 'person' | 'both' | 'none';
 type ContactRow = { name: string; relationship: string; phone: string; whatsapp_consent_at: string | null };
@@ -32,15 +32,20 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
   const [error, setError] = useState('');
   const [links, setLinks] = useState<CreatedLink[]>([]);
   const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+  const [legacyMode, setLegacyMode] = useState(false);
+  const [manualConsent, setManualConsent] = useState(false);
+  const [manualLink, setManualLink] = useState('');
+  const [manualCopied, setManualCopied] = useState(false);
 
   useEffect(() => {
+    if (!legacyMode) return;
     let active = true;
     void supabase.from('emergency_contacts').select('name, relationship, phone, whatsapp_consent_at').eq('user_id', userId).order('created_at').then(({ data, error: loadError }) => {
       if (!active) return;
       setContacts(loadError ? [] : ((data ?? []) as ContactRow[]));
     });
     return () => { active = false; };
-  }, [userId]);
+  }, [legacyMode, userId]);
 
   const wantsContacts = option === 'contacts' || option === 'both';
   const wantsPerson = option === 'person' || option === 'both';
@@ -117,13 +122,48 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
     }
   }
 
+  async function copyManualLink() {
+    setError('');
+    if (!manualConsent) { setError('Autoriza compartir el viaje para crear el enlace.'); return; }
+    let link = manualLink;
+    if (!link) {
+      setBusy(true);
+      const outcome = await createManualCompanionLink(tripRequestId);
+      setBusy(false);
+      if (!outcome.ok) { setError(outcome.message); return; }
+      link = outcome.link;
+      setManualLink(link);
+      onCreated();
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      setManualCopied(true);
+    } catch {
+      setError('No pudimos copiar el enlace automáticamente. Puedes seleccionarlo y copiarlo manualmente.');
+    }
+  }
+
   const modal = <div className="modal-backdrop companion-modal-backdrop" role="presentation" onMouseDown={onClose}><div className="modal-card companion-modal" role="dialog" aria-modal="true" aria-labelledby="companion-modal-title" onMouseDown={(event) => event.stopPropagation()}>
     <button className="modal-close" onClick={onClose}><X size={18} /></button>
     <p className="eyebrow">ACOMPAÑAMIENTO INTELIGENTE · PASAJERO</p>
     <h2 id="companion-modal-title">Viaja acompañado con Student Go</h2>
     <div className="companion-trip-context"><strong>{tripLabel}</strong><span>Estás configurando tu propio acompañamiento como pasajero.</span></div>
 
-    {links.length === 0 ? <>
+    {!legacyMode ? <>
+      <section className="manual-companion-share">
+        <h3>Compartir viaje</h3>
+        <p className="modal-lead">Comparte el enlace de este recorrido con una persona de confianza. No se enviará ningún mensaje.</p>
+        <label className="form-label consent-line"><input type="checkbox" checked={manualConsent} onChange={(event) => setManualConsent(event.target.checked)} /> Autorizo compartir mi ubicación durante este viaje con quien reciba el enlace.</label>
+        {manualLink && <code className="companion-link-preview">{manualLink}</code>}
+        {error && <div className="auth-error" role="alert">{error}</div>}
+        <button type="button" className="primary-button wide" disabled={busy || !manualConsent} onClick={() => { void copyManualLink(); }}>
+          <Copy size={16} /> {busy ? 'Creando enlace...' : manualCopied ? 'Enlace copiado' : 'Copiar enlace'}
+        </button>
+      </section>
+      <button type="button" className="secondary-button wide" onClick={() => { setLegacyMode(true); setError(''); }}>Opciones anteriores de contactos y WhatsApp</button>
+    </> : <>
+      <button type="button" className="secondary-button wide" onClick={() => { setLegacyMode(false); setError(''); }}>Volver a Compartir viaje</button>
+      {links.length === 0 ? <>
       <p className="modal-lead">Tu abordaje fue confirmado. ¿Quieres compartir tu recorrido con alguien de confianza para que pueda saber si llegaste bien?</p>
       <div className="segmented">{OPTIONS.map((item) => <button key={item.value} className={option === item.value ? 'selected' : ''} onClick={() => setOption(item.value)}>{item.label}</button>)}</div>
 
@@ -144,7 +184,7 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
       <p className="scanner-status">El enlace se creará solo con tu consentimiento. Después podrás copiarlo y compartirlo únicamente con las personas autorizadas.</p>
       {error && <div className="auth-error">{error}</div>}
       <div className="companion-modal-actions"><button className="secondary-button" disabled={busy} onClick={() => { void saveNowNot(); }}>Ahora no</button><button className="primary-button" disabled={busy || option === 'none' || !consent || (contacts === null && wantsContacts)} onClick={() => { void submit(); }}><UserPlus size={17} /> {busy ? 'Guardando...' : 'Guardar acompañamiento'}</button></div>
-    </> : <>
+      </> : <>
       <p className="modal-lead">Enlaces privados listos para compartir manualmente.</p>
       <p className="scanner-status">No se enviaron mensajes automáticamente. Copia cada enlace y compártelo solo con la persona autorizada.</p>
       {links.map((item, index) => <div className="contact-item companion-created-link" key={linkKey(item) || `${item.label}-${index}`}>
@@ -156,6 +196,7 @@ export default function CompanionShareModal({ tripId, tripRequestId, userId, tri
       </div>)}
       {error && <div className="auth-error">{error}</div>}
       <button className="secondary-button wide" onClick={onClose}>Listo</button>
+      </>}
     </>}
   </div></div>;
 

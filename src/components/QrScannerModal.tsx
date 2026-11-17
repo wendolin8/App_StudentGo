@@ -54,7 +54,7 @@ export default function QrScannerModal({ onClose }: { onClose: () => void }) {
     const { data, error } = await supabase.rpc('validate_ride_qr', { token_input: token });
     if (error || !data || !data[0]) { setResult('Error al validar el QR.'); return; }
     const r = data[0];
-    if (r.valid) setResult('Pasajero verificado correctamente. Viaje iniciado.');
+    if (r.valid) setResult('Pasajero verificado. El pasajero ya puede compartir su viaje antes de que inicies el recorrido.');
     else if (r.reason === 'NO_ES_CONDUCTOR') setResult('Solo el conductor de este viaje puede validar el QR.');
     else if (r.reason === 'TOKEN_NO_ENCONTRADO') setResult('El código QR no corresponde a este pasajero o viaje.');
     else if (r.reason === 'QR_YA_USADO') setResult('Este QR ya fue utilizado.');

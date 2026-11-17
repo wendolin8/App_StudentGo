@@ -385,7 +385,7 @@ function MapCard() {
 }
 
 function TripCard({ trip, status, onSelect }: { trip: Trip; status?: TripStatus; onSelect: () => void }) {
-  return <article className="trip-card"><div className="trip-main"><div className="avatar trip-avatar" style={{ background: trip.color }}>{trip.initials}</div><div className="trip-copy"><strong>{trip.driver}</strong><span>{trip.car}</span></div><div className="trip-price"><strong>Tarifa individual</strong><span>Se calcula al solicitar</span></div></div><div className="trip-route"><div><span className="route-dot purple" />{trip.from}</div><div className="route-connector" /><div><span className="route-dot dark" />{trip.to}</div></div><div className="trip-meta"><span><Clock3 size={14} /> {trip.time}</span><span><UsersRound size={14} /> {trip.seats} lugares</span>{status ? <span className={`status-pill ${status.toLowerCase()}`}>{status === 'PENDING' ? 'Pendiente' : status === 'ACCEPTED' ? 'Aceptado' : status === 'COMPLETED' ? 'Completado' : status}</span> : <button className="small-button" onClick={onSelect}>Solicitar</button>}</div></article>;
+  return <article className="trip-card" style={{ display: 'block' }}><div className="trip-main"><div className="avatar trip-avatar" style={{ background: trip.color }}>{trip.initials}</div><div className="trip-copy"><strong>{trip.driver}</strong><span>{trip.car}</span></div><div className="trip-price"><strong>Tarifa individual</strong><span>Se calcula al solicitar</span></div></div><div className="trip-route"><div><span className="route-dot purple" />{trip.from}</div><div className="route-connector" /><div><span className="route-dot dark" />{trip.to}</div></div><div className="trip-meta"><span><Clock3 size={14} /> {trip.time}</span><span><UsersRound size={14} /> {trip.seats} lugares</span>{status ? <span className={`status-pill ${status.toLowerCase()}`}>{status === 'PENDING' ? 'Pendiente' : status === 'ACCEPTED' ? 'Aceptado' : status === 'COMPLETED' ? 'Completado' : status}</span> : <button className="small-button" onClick={onSelect}>Solicitar</button>}</div></article>;
 }
 
 
@@ -466,10 +466,11 @@ function TripModal({ trip, status, onClose, onRequest }: { trip: Trip; status?: 
   const [message, setMessage] = useState('');
   useEffect(() => {
     if (!trip.origin || !trip.destination || !containerRef.current) return;
+    let active = true;
     const map = createMap(containerRef.current, trip.origin, 13);
     addMarker(map, trip.origin, 'Origen'); addMarker(map, trip.destination, 'Destino');
-    void getRoute(trip.origin, trip.destination).then((route) => { if (route) { drawRoute(map, route.geometry); fitToRoute(map, route.geometry); } });
-    return () => { map.remove(); };
+    void getRoute(trip.origin, trip.destination).then((route) => { if (active && route) { drawRoute(map, route.geometry); fitToRoute(map, route.geometry); } });
+    return () => { active = false; map.remove(); };
   }, [trip]);
 
   async function selectDropoff(place: PlaceResult, route: RouteInfo | null): Promise<void> {

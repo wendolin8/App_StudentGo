@@ -27,7 +27,7 @@ function deliveryOf(status: string): string {
   return 'Sin estado de entrega WhatsApp';
 }
 
-export default function CompanionPanel({ tripId, tripRequestId, userId, tripLabel, autoPrompt = false }: { tripId: string; tripRequestId: string; userId: string; tripLabel: string; autoPrompt?: boolean }) {
+export default function CompanionPanel({ tripId, tripRequestId, userId, tripLabel, tripInProgress, autoPrompt = false }: { tripId: string; tripRequestId: string; userId: string; tripLabel: string; tripInProgress: boolean; autoPrompt?: boolean }) {
   const [rows, setRows] = useState<CompanionRow[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [showModal, setShowModal] = useState(false);
@@ -61,7 +61,7 @@ export default function CompanionPanel({ tripId, tripRequestId, userId, tripLabe
   const activeCount = rows?.filter((row) => !row.revoked_at && !row.closed_at && new Date(row.expires_at).getTime() > Date.now()).length ?? 0;
 
   useEffect(() => {
-    if (activeCount === 0) { setLocationMessage(''); return; }
+    if (activeCount === 0 || !tripInProgress) { setLocationMessage(''); return; }
     if (!navigator.geolocation) { setLocationMessage('Este dispositivo no permite compartir ubicación.'); return; }
     let lastSentAt = 0;
     let sending = false;
@@ -80,7 +80,7 @@ export default function CompanionPanel({ tripId, tripRequestId, userId, tripLabe
       else if (error) setLocationMessage('No pudimos actualizar la ubicación. Revisa tu conexión.');
     }, () => setLocationMessage('No hay permiso de ubicación. Puedes activarlo en los permisos del navegador.'), { enableHighAccuracy: true, maximumAge: 10000, timeout: 20000 });
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [activeCount, tripRequestId]);
+  }, [activeCount, tripInProgress, tripRequestId]);
 
   async function revoke(id: string) {
     const ok = await revokeCompanion(id);
@@ -94,13 +94,13 @@ export default function CompanionPanel({ tripId, tripRequestId, userId, tripLabe
       <button className="small-button" disabled={activeCount >= 3} onClick={() => setShowModal(true)}><UserPlus size={14} /> {activePreference ? 'Gestionar acompañamiento' : 'Configurar acompañamiento'}</button>
     </div>
     {preferenceKnown && !activePreference && <div className="scanner-status">Tu QR confirmó el abordaje. Puedes compartir tu recorrido cuando quieras; el QR y el SOS no dan consentimiento por ti.</div>}
-    {activeCount > 0 && <p className="scanner-status">{locationMessage}</p>}
+    {activeCount > 0 && tripInProgress && <p className="scanner-status">{locationMessage}</p>}
     {failed && <div className="auth-error">No pudimos cargar tus acompañantes.</div>}
     {rows?.map((row) => {
       const status = statusOf(row);
       const active = status.tone !== 'rejected' && !row.closed_at;
       return <div className="contact-item" key={row.id}>
-        <div><strong>{row.name}</strong><span>{row.relationship} · {row.source === 'EMERGENCY_CONTACT' ? 'Contacto de emergencia' : 'Persona que espera'}</span><span>{deliveryOf(row.delivery_status)}</span></div>
+        <div><strong>{row.name}</strong><span>{row.relationship} · {row.source === 'EMERGENCY_CONTACT' ? 'Contacto de emergencia' : row.source === 'MANUAL' ? 'Enlace manual' : 'Persona que espera'}</span><span>{row.source === 'MANUAL' ? 'Enlace creado sin enviar mensajes.' : deliveryOf(row.delivery_status)}</span></div>
         <div className="trip-meta"><span className={`status-pill ${status.tone}`}>{status.text}</span>{active && <button className="small-button" onClick={() => { void revoke(row.id); }}><Trash2 size={14} /> Revocar</button>}</div>
       </div>;
     })}

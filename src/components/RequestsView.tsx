@@ -54,7 +54,7 @@ function PassengerRequests({ rides, userId, onOpenSafety }: { rides: PassengerRi
         {boarded && <button className="small-button" onClick={onOpenSafety}>Centro de seguridad</button>}
       </div>}
       {accepted && openQrId === request.id && <QrPassengerCard tripId={trip.id} started={started} />}
-      {accepted && boarded && <CompanionPanel tripId={trip.id} tripRequestId={request.id} userId={userId} tripLabel={`${trip.origin} → ${trip.destination}`} autoPrompt />}
+      {accepted && boarded && <CompanionPanel tripId={trip.id} tripRequestId={request.id} userId={userId} tripLabel={`${trip.origin} → ${trip.destination}`} tripInProgress={started} autoPrompt />}
     </article>;
   })}</div>;
 }
@@ -72,7 +72,7 @@ function DriverRequests({ groups, onChanged, onOpenSafety }: { groups: DriverTri
     else setMessage('No se pudo completar: ' + result.reason);
   }
 
-  async function runTripRpc(name: 'mark_meeting_point_reached' | 'complete_ride', tripId: string, pending: string, success: string) {
+  async function runTripRpc(name: 'mark_meeting_point_reached' | 'start_ride' | 'complete_ride', tripId: string, pending: string, success: string) {
     setMessage(pending);
     const { data, error } = await supabase.rpc(name, { trip_uuid: tripId });
     const result = (data as RpcResult[] | null)?.[0];
@@ -97,8 +97,11 @@ function DriverRequests({ groups, onChanged, onOpenSafety }: { groups: DriverTri
         {accepted.map((req) => <RequestRow key={req.id} req={req} actionable={false} />)}
         {accepted.length > 0 && open && !trip.meetingPointReachedAt && <button className="primary-button wide" style={{ marginTop: 12 }} onClick={() => { void runTripRpc('mark_meeting_point_reached', trip.id, 'Registrando tu llegada al punto de encuentro...', 'Llegada registrada. Los pasajeros fueron avisados.'); }}><MapPin size={17} /> Llegué al punto de encuentro</button>}
         {open && accepted.length > 0 && <p className="scanner-status">Escanea el QR de cada pasajero al abordar para iniciar el recorrido.</p>}
+        {!started && accepted.some((request) => request.qrUsedAt) && <div className="trip-meta" style={{ marginTop: 12 }}>
+          <button className="primary-button" onClick={() => { void runTripRpc('start_ride', trip.id, 'Iniciando recorrido...', 'Viaje en curso.'); }}><Car size={16} /> Iniciar recorrido</button>
+        </div>}
         {started && <div className="trip-meta" style={{ marginTop: 12 }}>
-          <button className="primary-button" onClick={() => { void runTripRpc('complete_ride', trip.id, 'Finalizando viaje...', 'Viaje finalizado. Gracias por compartir tu camino.'); }}><Check size={16} /> Finalizar viaje</button>
+          <button className="primary-button" onClick={() => { void runTripRpc('complete_ride', trip.id, 'Finalizando recorrido...', 'Recorrido finalizado.'); }}><Check size={16} /> Finalizar recorrido</button>
           <button className="small-button" onClick={onOpenSafety}><ShieldCheck size={14} /> Seguridad y SOS del viaje</button>
         </div>}
       </article>;
@@ -108,7 +111,7 @@ function DriverRequests({ groups, onChanged, onOpenSafety }: { groups: DriverTri
 }
 
 function RequestRow({ req, actionable, onAccept, onReject }: { req: DriverRequest; actionable: boolean; onAccept?: () => void; onReject?: () => void }) {
-  const label = req.status === 'PENDING' ? 'Pendiente' : req.tripStartedAt ? 'En viaje' : req.passengerConfirmedAt ? 'Llegó bien' : 'Aceptado';
+  const label = req.status === 'PENDING' ? 'Pendiente' : req.tripStartedAt ? 'En viaje' : req.qrUsedAt ? 'Abordaje validado' : req.passengerConfirmedAt ? 'Llegó bien' : 'Aceptado';
   return <div className="contact-item" style={{ marginTop: 10 }}>
     <div><strong>{req.passengerName}</strong><span>${req.fare} MXN</span></div>
     {req.status === 'PENDING' && actionable ? <div><button className="small-button" onClick={onAccept}>Aceptar</button><button className="small-button" style={{ background: '#dc2626' }} onClick={onReject}>Rechazar</button></div>

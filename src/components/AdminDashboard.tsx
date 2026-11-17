@@ -16,6 +16,7 @@ type ApplicationRow = { id: string; user_id: string; status: string; submitted_a
 type ApplicationTab = 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
 type TripRow = { id: string; origin_text: string; destination_text: string; departure_at: string; status: string; vehicle_name: string; driver_id: string };
 type SosRow = { id: string; trip_id: string | null; role: string; message: string | null; status: string; created_at: string; resolved_at: string | null; latitude: number | null; longitude: number | null; resolution_note: string | null };
+type CompanionIncidentRow = { id: string; trip_id: string; passenger_id: string; companion_id: string; status: string; created_at: string };
 type Announcement = { id: string; title: string; message: string; type: string; published: boolean; created_at: string };
 
 type NavItem = { id: AdminSection; label: string; icon: typeof LayoutDashboard };
@@ -37,6 +38,7 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
   const [applications, setApplications] = useState<ApplicationRow[]>([]);
   const [trips, setTrips] = useState<TripRow[]>([]);
   const [sosAlerts, setSosAlerts] = useState<SosRow[]>([]);
+  const [companionIncidents, setCompanionIncidents] = useState<CompanionIncidentRow[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -50,14 +52,15 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
 
   const loadDashboard = useCallback(async (): Promise<void> => {
     setLoading(true);
-    const [studentsResult, applicationsResult, tripsResult, sosResult, noticesResult] = await Promise.all([
+    const [studentsResult, applicationsResult, tripsResult, sosResult, companionIncidentsResult, noticesResult] = await Promise.all([
       supabase.from('profiles').select('id, full_name, email, student_number, role, student_verified, driver_verified, updated_at').order('updated_at', { ascending: false }),
       supabase.from('driver_applications').select('id, user_id, status, submitted_at, approved_at, approved_by, reviewed_at, reviewed_by, rejection_reason, vehicles(id, brand, model, plates, vehicle_year, color, license_path, registration_card_path)').order('submitted_at', { ascending: false }),
       supabase.from('trips').select('id, origin_text, destination_text, departure_at, status, vehicle_name, driver_id').order('departure_at', { ascending: false }).limit(100),
       supabase.from('sos_alerts').select('id, trip_id, role, message, status, created_at, resolved_at, latitude, longitude, resolution_note').order('created_at', { ascending: false }).limit(100),
+      supabase.from('companion_incidents').select('id, trip_id, passenger_id, companion_id, status, created_at').order('created_at', { ascending: false }).limit(100),
       supabase.from('admin_announcements').select('id, title, message, type, published, created_at').order('created_at', { ascending: false }),
     ]);
-    if (studentsResult.error || applicationsResult.error || tripsResult.error || sosResult.error || noticesResult.error) setMessage('No se pudieron cargar todos los datos del panel.');
+    if (studentsResult.error || applicationsResult.error || tripsResult.error || sosResult.error || companionIncidentsResult.error || noticesResult.error) setMessage('No se pudieron cargar todos los datos del panel.');
     const community = (studentsResult.data ?? []) as StudentRow[];
     setCommunityProfiles(community);
     setStudents(community.filter((student) => student.role === 'STUDENT'));
@@ -70,6 +73,7 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
     })) as ApplicationRow[]);
     setTrips((tripsResult.data ?? []) as TripRow[]);
     setSosAlerts((sosResult.data ?? []) as SosRow[]);
+    setCompanionIncidents((companionIncidentsResult.data ?? []) as CompanionIncidentRow[]);
     setAnnouncements((noticesResult.data ?? []) as Announcement[]);
     setLoading(false);
   }, []);
@@ -78,10 +82,12 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
 
   useEffect(() => {
     const refreshIncidents = async (): Promise<void> => {
-      const { data, error } = await supabase.from('sos_alerts')
-        .select('id, trip_id, role, message, status, created_at, resolved_at, latitude, longitude, resolution_note')
-        .order('created_at', { ascending: false }).limit(100);
-      if (!error && data) setSosAlerts(data as SosRow[]);
+      const [sosResult, companionResult] = await Promise.all([
+        supabase.from('sos_alerts').select('id, trip_id, role, message, status, created_at, resolved_at, latitude, longitude, resolution_note').order('created_at', { ascending: false }).limit(100),
+        supabase.from('companion_incidents').select('id, trip_id, passenger_id, companion_id, status, created_at').order('created_at', { ascending: false }).limit(100),
+      ]);
+      if (!sosResult.error && sosResult.data) setSosAlerts(sosResult.data as SosRow[]);
+      if (!companionResult.error && companionResult.data) setCompanionIncidents(companionResult.data as CompanionIncidentRow[]);
     };
     const timer = window.setInterval(() => { void refreshIncidents(); }, 15000);
     return () => window.clearInterval(timer);
@@ -165,12 +171,12 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
       <header className="admin-topbar"><div><span className="admin-kicker">STUDENT GO / ADMINISTRACIÓN</span><h1>{navItems.find((item) => item.id === section)?.label}</h1></div><div className="admin-top-actions"><span className="admin-role"><ShieldCheck size={15} /> Rol ADMIN verificado</span><button onClick={() => { void loadDashboard(); }} aria-label="Actualizar panel"><RefreshCw size={17} /></button></div></header>
       {message && <div className="admin-message">{message}</div>}
       {loading ? <div className="admin-loading"><RefreshCw size={22} /> Cargando información segura...</div> : <>
-        {section === 'overview' && <Overview stats={stats} profiles={communityProfiles} sosAlerts={sosAlerts} onNavigate={setSection} />}
+        {section === 'overview' && <Overview stats={stats} profiles={communityProfiles} sosAlerts={sosAlerts} companionIncidents={companionIncidents} onNavigate={setSection} />}
         {section === 'applications' && <Applications applications={filteredApplications} counts={applicationCounts} activeTab={applicationTab} search={applicationSearch} onTabChange={setApplicationTab} onSearch={setApplicationSearch} onOpen={openDocuments} />}
         {section === 'credentials' && <CredentialReviews onChange={() => void loadDashboard()} />}
         {section === 'students' && <Students students={filteredStudents} search={search} onSearch={setSearch} />}
         {section === 'trips' && <Trips trips={trips} />}
-        {section === 'sos' && <SosAlerts alerts={sosAlerts} />}
+        {section === 'sos' && <SosAlerts alerts={sosAlerts} companionIncidents={companionIncidents} />}
         {section === 'notices' && <Notices announcements={announcements} draft={noticeDraft} setDraft={setNoticeDraft} onCreate={() => { void createNotice(); }} onDelete={(id) => { void deleteNotice(id); }} />}
         {section === 'settings' && <><SettingsView /><div className="admin-content"><PasskeySettings key={profile.id} userId={profile.id} /></div></>}
       </>}
@@ -179,8 +185,8 @@ export default function AdminDashboard({ profile, onSignOut }: { profile: AdminP
   </div>;
 }
 
-function Overview({ stats, profiles, sosAlerts, onNavigate }: { stats: { students: number; drivers: number; administrators: number; verified: number; pending: number; activeTrips: number; activeSos: number }; profiles: StudentRow[]; sosAlerts: SosRow[]; onNavigate: (section: AdminSection) => void }) {
-  return <div className="admin-content"><div className="admin-welcome"><div><p className="eyebrow">VISTA OPERATIVA</p><h2>Todo Student Go, en un solo lugar.</h2><p>Supervisa la comunidad, los viajes y la seguridad desde una experiencia exclusiva para administradores.</p></div><div className="admin-welcome-icon"><LayoutDashboard size={30} /></div></div><div className="admin-stat-grid"><StatCard icon={GraduationCap} label="Estudiantes" value={stats.students} detail={`${stats.verified} con UTP verificada`} tone="blue" onClick={() => onNavigate('students')} /><StatCard icon={CarFront} label="Conductores" value={stats.drivers} detail="Rol adicional aprobado" tone="green" /><StatCard icon={ShieldCheck} label="Administradores" value={stats.administrators} detail="Cuentas con acceso total" tone="orange" /><StatCard icon={Siren} label="SOS activos" value={stats.activeSos} detail="Requieren seguimiento" tone="red" onClick={() => onNavigate('sos')} /></div><div className="admin-overview-grid"><section className="admin-panel"><div className="admin-panel-heading"><div><span className="admin-kicker">OPERACIÓN</span><h3>Solicitudes y viajes</h3></div><button className="ghost-button" onClick={() => onNavigate('applications')}>Revisar solicitudes <ExternalLink size={13} /></button></div><div className="admin-role-summary"><div><strong>{stats.pending}</strong><span>Solicitudes pendientes</span></div><div><strong>{stats.activeTrips}</strong><span>Viajes activos</span></div><div><strong>{profiles.filter((profile) => profile.student_verified).length}</strong><span>UTP verificadas</span></div></div></section><section className="admin-panel"><div className="admin-panel-heading"><div><span className="admin-kicker">SEGURIDAD</span><h3>Últimos incidentes</h3></div><button className="ghost-button" onClick={() => onNavigate('sos')}>Abrir seguimiento</button></div>{sosAlerts.slice(0, 3).map((alert) => <div className="admin-activity" key={alert.id}><div className={`admin-activity-icon ${alert.status === 'RESOLVED' ? 'safe' : 'danger'}`}><Siren size={15} /></div><div><strong>{alert.status === 'RESOLVED' ? 'Incidente resuelto' : 'Incidente activo'}</strong><span>{alert.message || 'Sin mensaje adicional'} · {new Date(alert.created_at).toLocaleString('es-MX')}</span></div></div>)}{sosAlerts.length === 0 && <p className="admin-muted">No hay incidentes registrados.</p>}</section></div></div>;
+function Overview({ stats, profiles, sosAlerts, companionIncidents, onNavigate }: { stats: { students: number; drivers: number; administrators: number; verified: number; pending: number; activeTrips: number; activeSos: number }; profiles: StudentRow[]; sosAlerts: SosRow[]; companionIncidents: CompanionIncidentRow[]; onNavigate: (section: AdminSection) => void }) {
+  return <div className="admin-content"><div className="admin-welcome"><div><p className="eyebrow">VISTA OPERATIVA</p><h2>Todo Student Go, en un solo lugar.</h2><p>Supervisa la comunidad, los viajes y la seguridad desde una experiencia exclusiva para administradores.</p></div><div className="admin-welcome-icon"><LayoutDashboard size={30} /></div></div><div className="admin-stat-grid"><StatCard icon={GraduationCap} label="Estudiantes" value={stats.students} detail={`${stats.verified} con UTP verificada`} tone="blue" onClick={() => onNavigate('students')} /><StatCard icon={CarFront} label="Conductores" value={stats.drivers} detail="Rol adicional aprobado" tone="green" /><StatCard icon={ShieldCheck} label="Administradores" value={stats.administrators} detail="Cuentas con acceso total" tone="orange" /><StatCard icon={Siren} label="SOS activos" value={stats.activeSos} detail="Requieren seguimiento" tone="red" onClick={() => onNavigate('sos')} /></div><div className="admin-overview-grid"><section className="admin-panel"><div className="admin-panel-heading"><div><span className="admin-kicker">OPERACIÓN</span><h3>Solicitudes y viajes</h3></div><button className="ghost-button" onClick={() => onNavigate('applications')}>Revisar solicitudes <ExternalLink size={13} /></button></div><div className="admin-role-summary"><div><strong>{stats.pending}</strong><span>Solicitudes pendientes</span></div><div><strong>{stats.activeTrips}</strong><span>Viajes activos</span></div><div><strong>{profiles.filter((profile) => profile.student_verified).length}</strong><span>UTP verificadas</span></div></div></section><section className="admin-panel"><div className="admin-panel-heading"><div><span className="admin-kicker">SEGURIDAD</span><h3>Últimos incidentes</h3></div><button className="ghost-button" onClick={() => onNavigate('sos')}>Abrir seguimiento</button></div>{companionIncidents.slice(0, 3).map((incident) => <div className="admin-activity" key={incident.id}><div className="admin-activity-icon danger"><ShieldCheck size={15} /></div><div><strong>Reporte de llegada · {incident.status}</strong><span>{new Date(incident.created_at).toLocaleString('es-MX')}</span></div></div>)}{sosAlerts.slice(0, 3).map((alert) => <div className="admin-activity" key={alert.id}><div className={`admin-activity-icon ${alert.status === 'RESOLVED' ? 'safe' : 'danger'}`}><Siren size={15} /></div><div><strong>{alert.status === 'RESOLVED' ? 'Incidente resuelto' : 'Incidente activo'}</strong><span>{alert.message || 'Sin mensaje adicional'} · {new Date(alert.created_at).toLocaleString('es-MX')}</span></div></div>)}{sosAlerts.length === 0 && companionIncidents.length === 0 && <p className="admin-muted">No hay incidentes registrados.</p>}</section></div></div>;
 }
 
 function StatCard({ icon: Icon, label, value, detail, tone, onClick }: { icon: typeof Users; label: string; value: number; detail: string; tone: string; onClick?: () => void }) {
@@ -200,9 +206,9 @@ function Trips({ trips }: { trips: TripRow[] }) {
   return <div className="admin-content"><div className="admin-section-intro"><div><p className="eyebrow">MOVILIDAD</p><h2>Viajes</h2><p>Supervisa recorridos y estados operativos.</p></div><span className="admin-count-badge">{trips.length} registrados</span></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Ruta</th><th>Salida</th><th>Vehículo</th><th>Estado</th></tr></thead><tbody>{trips.map((trip) => <tr key={trip.id}><td><strong>{trip.origin_text}</strong><span>→ {trip.destination_text}</span></td><td>{new Date(trip.departure_at).toLocaleString('es-MX')}</td><td>{trip.vehicle_name}</td><td><span className={`admin-status ${trip.status.toLowerCase()}`}>{trip.status}</span></td></tr>)}</tbody></table>{trips.length === 0 && <EmptyState icon={Route} title="Aún no hay viajes" text="Los recorridos publicados aparecerán aquí." />}</div></div>;
 }
 
-function SosAlerts({ alerts }: { alerts: SosRow[] }) {
+function SosAlerts({ alerts, companionIncidents }: { alerts: SosRow[]; companionIncidents: CompanionIncidentRow[] }) {
   const [selected, setSelected] = useState<SosRow | null>(null);
-  return <div className="admin-content"><div className="admin-section-intro"><div><p className="eyebrow">CENTRO DE SEGURIDAD</p><h2>Incidentes SOS</h2><p>Seguimiento de emergencias y cronología de cada alerta.</p></div><span className="admin-count-badge danger-badge">{alerts.filter((alert) => alert.status !== 'RESOLVED').length} activos</span></div><div className="admin-list">{alerts.map((alert) => <article className="admin-list-card clickable" key={alert.id} role="button" tabIndex={0} onClick={() => setSelected(alert)} onKeyDown={(event) => { if (event.key === 'Enter') setSelected(alert); }}><div className={`admin-list-icon ${alert.status === 'RESOLVED' ? 'green' : 'red'}`}><Siren size={20} /></div><div className="admin-list-copy"><strong>{alert.status === 'RESOLVED' ? 'Incidente resuelto' : 'Atención requerida'} · {alert.role}</strong><span>{alert.message || 'Sin mensaje adicional'}</span><small>{new Date(alert.created_at).toLocaleString('es-MX')}{alert.resolved_at ? ` · Resuelto ${new Date(alert.resolved_at).toLocaleString('es-MX')}` : ''}</small></div><span className={`admin-status ${alert.status.toLowerCase()}`}>{alert.status}</span></article>)}{alerts.length === 0 && <EmptyState icon={ShieldCheck} title="Sin incidentes SOS" text="No hay emergencias registradas." />}</div>{selected && <SosIncidentDetail alert={selected} onClose={() => setSelected(null)} />}</div>;
+  return <div className="admin-content"><div className="admin-section-intro"><div><p className="eyebrow">CENTRO DE SEGURIDAD</p><h2>Incidentes y reportes de llegada</h2><p>Revisa reportes internos y, por separado, las alertas SOS.</p></div><span className="admin-count-badge danger-badge">{alerts.filter((alert) => alert.status !== 'RESOLVED').length + companionIncidents.filter((incident) => incident.status === 'OPEN').length} requieren atención</span></div><section className="admin-panel"><div className="admin-panel-heading"><div><span className="admin-kicker">ACOMPAÑAMIENTO INTELIGENTE</span><h3>Reportes de llegada</h3></div></div><div className="admin-list">{companionIncidents.map((incident) => <article className="admin-list-card" key={incident.id}><div className="admin-list-icon red"><ShieldCheck size={20} /></div><div className="admin-list-copy"><strong>Reporte de pasajero no llegado</strong><span>Incidente interno registrado para revisión.</span><small>{new Date(incident.created_at).toLocaleString('es-MX')}</small></div><span className={`admin-status ${incident.status.toLowerCase()}`}>{incident.status}</span></article>)}{companionIncidents.length === 0 && <EmptyState icon={ShieldCheck} title="Sin reportes de llegada" text="Los reportes de acompañantes aparecerán aquí." />}</div></section><section className="admin-panel"><div className="admin-panel-heading"><div><span className="admin-kicker">SOS</span><h3>Incidentes SOS</h3></div></div><div className="admin-list">{alerts.map((alert) => <article className="admin-list-card clickable" key={alert.id} role="button" tabIndex={0} onClick={() => setSelected(alert)} onKeyDown={(event) => { if (event.key === 'Enter') setSelected(alert); }}><div className={`admin-list-icon ${alert.status === 'RESOLVED' ? 'green' : 'red'}`}><Siren size={20} /></div><div className="admin-list-copy"><strong>{alert.status === 'RESOLVED' ? 'Incidente resuelto' : 'Atención requerida'} · {alert.role}</strong><span>{alert.message || 'Sin mensaje adicional'}</span><small>{new Date(alert.created_at).toLocaleString('es-MX')}{alert.resolved_at ? ` · Resuelto ${new Date(alert.resolved_at).toLocaleString('es-MX')}` : ''}</small></div><span className={`admin-status ${alert.status.toLowerCase()}`}>{alert.status}</span></article>)}{alerts.length === 0 && <EmptyState icon={Siren} title="Sin incidentes SOS" text="No hay emergencias registradas." />}</div></section>{selected && <SosIncidentDetail alert={selected} onClose={() => setSelected(null)} />}</div>;
 }
 
 function Notices({ announcements, draft, setDraft, onCreate, onDelete }: { announcements: Announcement[]; draft: { title: string; message: string; type: string }; setDraft: (draft: { title: string; message: string; type: string }) => void; onCreate: () => void; onDelete: (id: string) => void }) {

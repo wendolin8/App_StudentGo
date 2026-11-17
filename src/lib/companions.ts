@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 
-export type CompanionSource = 'COMPANION' | 'EMERGENCY_CONTACT';
+export type CompanionSource = 'COMPANION' | 'EMERGENCY_CONTACT' | 'MANUAL';
 export type CompanionSelection = 'EMERGENCY_CONTACTS' | 'WAITING_PERSON' | 'BOTH' | 'NOW_NOT';
 export type CompanionInput = { name: string; relationship: string; phone: string; source: CompanionSource; locationConsent: boolean; whatsappConsent: boolean };
 export type CompanionRow = {
@@ -8,7 +8,7 @@ export type CompanionRow = {
   trip_request_id: string;
   name: string;
   relationship: string;
-  phone: string;
+  phone: string | null;
   source: CompanionSource;
   expires_at: string;
   revoked_at: string | null;
@@ -19,7 +19,7 @@ export type CompanionRow = {
 };
 export type ArrivalResponse = 'ARRIVED' | 'NOT_ARRIVED' | 'CANNOT_CONFIRM';
 
-type RpcResult = { ok: boolean; reason: string; token?: string; companion_id?: string; sos_alert_id?: string | null; active?: boolean };
+type RpcResult = { ok: boolean; reason: string; token?: string; companion_id?: string; sos_alert_id?: string | null; incident_id?: string | null; active?: boolean };
 
 export type TrackingView = {
   studentFirstName: string;
@@ -32,6 +32,9 @@ export type TrackingView = {
   tripCompleted: boolean;
   studentConfirmedAt: string | null;
   companionResponse: ArrivalResponse | null;
+  manualLink: boolean;
+  arrivalDeadlineAt: string | null;
+  companionRemindedAt: string | null;
   latitude: number | null;
   longitude: number | null;
   locationAt: string | null;
@@ -56,6 +59,7 @@ const REASON_MESSAGES: Record<string, string> = {
   ACOMPANAMIENTO_FINALIZADO: 'El acompañamiento ya finalizó.',
   ACOMPAÑAMIENTO_NO_ACTIVADO: 'Primero elige activar Acompañamiento Inteligente para este viaje.',
   VIAJE_EN_CURSO: 'El viaje todavía no ha terminado.',
+  ABORDAJE_REQUERIDO: 'El conductor debe validar el QR del pasajero antes de compartir el enlace.',
   RESPUESTA_INVALIDA: 'La respuesta no es válida.',
 };
 
@@ -71,6 +75,15 @@ export async function createCompanion(tripRequestId: string, input: CompanionInp
   const { data, error } = await supabase.rpc('create_ride_companion', {
     p_trip_request_id: tripRequestId, p_name: input.name, p_relationship: input.relationship,
     p_phone: input.phone, p_source: input.source, p_consent: input.locationConsent, p_whatsapp_consent: input.whatsappConsent,
+  });
+  if (error || !isRpcResult(data)) return { ok: false, message: 'No pudimos crear el enlace. Intenta de nuevo.' };
+  if (!data.ok || !data.token || !data.companion_id) return { ok: false, message: reasonMessage(data.reason) };
+  return { ok: true, token: data.token, companionId: data.companion_id, link: `${window.location.origin}/seguimiento/${data.token}` };
+}
+
+export async function createManualCompanionLink(tripRequestId: string): Promise<{ ok: true; link: string; token: string; companionId: string } | { ok: false; message: string }> {
+  const { data, error } = await supabase.rpc('create_manual_companion_link', {
+    p_trip_request_id: tripRequestId, p_location_consent: true,
   });
   if (error || !isRpcResult(data)) return { ok: false, message: 'No pudimos crear el enlace. Intenta de nuevo.' };
   if (!data.ok || !data.token || !data.companion_id) return { ok: false, message: reasonMessage(data.reason) };
@@ -117,6 +130,9 @@ export async function fetchTracking(token: string): Promise<TrackingResult | nul
       tripCompleted: raw.trip_completed === true,
       studentConfirmedAt: typeof raw.student_confirmed_at === 'string' ? raw.student_confirmed_at : null,
       companionResponse: (raw.companion_response as ArrivalResponse | null) ?? null,
+      manualLink: raw.manual_link === true,
+      arrivalDeadlineAt: typeof raw.arrival_deadline_at === 'string' ? raw.arrival_deadline_at : null,
+      companionRemindedAt: typeof raw.companion_reminded_at === 'string' ? raw.companion_reminded_at : null,
       latitude: typeof raw.latitude === 'number' ? raw.latitude : null,
       longitude: typeof raw.longitude === 'number' ? raw.longitude : null,
       locationAt: typeof raw.location_at === 'string' ? raw.location_at : null,

@@ -20,7 +20,7 @@ function formatDate(iso: string): string {
 }
 
 function getLocationStatus(locationAt: string | null) {
-  if (!locationAt) return { fresh: false, message: 'Aún no hay una ubicación compartida.' };
+  if (!locationAt) return { fresh: false, message: 'Esperando ubicación del pasajero.' };
   const elapsed = Date.now() - new Date(locationAt).getTime();
   if (elapsed <= LOCATION_FRESH_FOR_MS) return { fresh: true, message: `GPS actualizado ${formatDate(locationAt)}.` };
   return { fresh: false, message: `La última ubicación se recibió ${formatDate(locationAt)}. Ya no se muestra como ubicación actual.` };
@@ -100,12 +100,13 @@ export default function CompanionTrackingPage({ token }: { token: string }) {
       {!loading && !failed && result?.ok && <>
         <section className="track-card card-surface">
           <p className="eyebrow">ESTADO DEL RECORRIDO</p>
-          <h1>{result.view.studentFirstName} está en un viaje</h1>
+          <h1>{result.view.tripCompleted ? 'Viaje terminado' : result.view.tripStarted ? 'Viaje en curso' : 'El viaje aún no inicia'}</h1>
           <p className="track-route"><MapPin size={16} /> {result.view.origin} → {result.view.destination}</p>
-          <div className="trip-meta"><span><Clock3 size={14} /> {formatDate(result.view.departureAt)}</span><span className={`status-pill ${result.view.tripStarted ? 'pending' : 'confirmed'}`}>{result.view.tripCompleted ? 'Recorrido finalizado' : result.view.tripStarted ? 'En curso' : 'Por iniciar'}</span></div>
+          <div className="trip-meta"><span><Clock3 size={14} /> {formatDate(result.view.departureAt)}</span><span className={`status-pill ${result.view.tripStarted ? 'pending' : 'confirmed'}`}>{result.view.tripCompleted ? 'Viaje terminado' : result.view.tripStarted ? 'Viaje en curso' : 'El viaje aún no inicia'}</span></div>
           {result.view.tripStarted && !result.view.tripCompleted && (result.view.latitude !== null && result.view.longitude !== null && result.view.locationAt && getLocationStatus(result.view.locationAt).fresh
             ? <LiveLocationMap latitude={result.view.latitude} longitude={result.view.longitude} locationAt={result.view.locationAt} studentName={result.view.studentFirstName} />
-            : <p className="scanner-status">{getLocationStatus(result.view.locationAt).message} Espera una nueva actualización autorizada desde el celular de {result.view.studentFirstName}.</p>)}
+            : <p className="scanner-status">{getLocationStatus(result.view.locationAt).message}</p>)}
+          {result.view.manualLink && result.view.companionRemindedAt && !result.view.companionResponse && <p className="scanner-status">Recordatorio: ¿El pasajero llegó bien?</p>}
         </section>
         <section className="track-card card-surface">
           <p className="eyebrow">CONFIRMACIONES</p>
@@ -113,11 +114,11 @@ export default function CompanionTrackingPage({ token }: { token: string }) {
           <div className="contact-item"><div><strong>Tu confirmación</strong><span>{result.view.companionResponse ? 'Respuesta registrada' : 'Pendiente'}</span></div><span className={`status-pill ${result.view.companionResponse === 'ARRIVED' ? 'confirmed' : 'pending'}`}>{result.view.companionResponse ? 'Registrada' : 'Pendiente'}</span></div>
         </section>
         {result.view.tripCompleted && !answer && !result.view.companionResponse && <section className="track-card card-surface">
-          <p className="eyebrow">{result.view.companionName}, ¿puedes confirmar?</p><h2>¿Puedes confirmar que llegó a salvo?</h2>
-          <div className="track-answers"><button className="primary-button wide" disabled={sending} onClick={() => { void answerWith('ARRIVED'); }}><ShieldCheck size={17} /> SÍ, LLEGÓ</button><button className="track-danger wide" disabled={sending} onClick={() => { void answerWith('NOT_ARRIVED'); }}><TriangleAlert size={17} /> NO HA LLEGADO</button><button className="secondary-button wide" disabled={sending} onClick={() => { void answerWith('CANNOT_CONFIRM'); }}>NO PUEDO CONFIRMAR</button></div>
+          <p className="eyebrow">CONFIRMACIÓN DE LLEGADA</p><h2>{result.view.manualLink ? '¿El pasajero llegó bien?' : '¿Puedes confirmar que llegó a salvo?'}</h2>
+          <div className="track-answers"><button className="primary-button wide" disabled={sending} onClick={() => { void answerWith('ARRIVED'); }}><ShieldCheck size={17} /> Sí llegó</button><button className="track-danger wide" disabled={sending} onClick={() => { void answerWith('NOT_ARRIVED'); }}><TriangleAlert size={17} /> No llegó</button><button className="secondary-button wide" disabled={sending} onClick={() => { void answerWith('CANNOT_CONFIRM'); }}>No puedo confirmar</button></div>
           {answerError && <div className="auth-error">{answerError}</div>}
         </section>}
-        {(answer || result.view.companionResponse) && <section className="track-card card-surface"><div className="request-confirmed"><Check size={20} /><div><strong>Respuesta registrada</strong><span>{RESPONSE_COPY[answer ?? result.view.companionResponse ?? 'CANNOT_CONFIRM']}</span></div></div>{whatsappMessage && <p className="scanner-status" role="status">{whatsappMessage}</p>}</section>}
+        {(answer || result.view.companionResponse) && <section className="track-card card-surface"><div className="request-confirmed"><Check size={20} /><div><strong>{result.view.manualLink && (answer ?? result.view.companionResponse) === 'NOT_ARRIVED' ? 'Reporte registrado' : 'Respuesta registrada'}</strong>{!(result.view.manualLink && (answer ?? result.view.companionResponse) === 'NOT_ARRIVED') && <span>{result.view.manualLink ? `Respuesta: ${(answer ?? result.view.companionResponse) === 'ARRIVED' ? 'Sí llegó' : 'No puedo confirmar'}.` : RESPONSE_COPY[answer ?? result.view.companionResponse ?? 'CANNOT_CONFIRM']}</span>}</div></div>{!result.view.manualLink && whatsappMessage && <p className="scanner-status" role="status">{whatsappMessage}</p>}</section>}
       </>}
     </main>
   </div>;

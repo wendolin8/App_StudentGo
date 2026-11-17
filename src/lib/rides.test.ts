@@ -30,7 +30,10 @@ describe('passenger companionship timing', () => {
     expect(canOfferPassengerCompanionship(request({ status: 'REJECTED', qrUsedAt: '2026-11-05T12:05:00.000Z' }))).toBe(false);
   });
 
-  it('offers companionship only after this passenger QR was validated', () => {
-    expect(canOfferPassengerCompanionship(request({ qrUsedAt: '2026-11-05T12:05:00.000Z' }))).toBe(true);
+  it('allows the passenger to prepare companionship after QR validation and before the route starts', () => {
+    expect(canOfferPassengerCompanionship(request({
+      qrUsedAt: '2026-11-05T12:05:00.000Z',
+      tripStartedAt: null,
+    }))).toBe(true);
   });
 });
